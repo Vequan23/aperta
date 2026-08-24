@@ -4,7 +4,11 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parse as parseVue } from "@vue/compiler-sfc";
-import ts from "typescript";
+// TypeScript 7 is the native project compiler, but 7.0 intentionally ships
+// without an embeddable API. Aperta uses Microsoft's supported TypeScript 6
+// compatibility package for in-process semantic analysis until the new API
+// arrives in TypeScript 7.1.
+import ts from "@typescript/typescript6";
 import type { DiffEvent } from "./types.ts";
 import { privateCachePath } from "./storage.ts";
 

@@ -14,7 +14,7 @@ Thanks for helping make generated code easier to understand and trust.
 
 ## Development
 
-Aperta requires Node.js 22.6 or newer and Git.
+Aperta requires Node.js 22.12 or newer and Git.
 
 ```sh
 npm ci

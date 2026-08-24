@@ -224,7 +224,7 @@ as proposed probes instead of treating a green test command as universal proof.
 
 ## Install and run
 
-Requires Node.js 22.6 or newer and Git.
+Requires Node.js 22.12 or newer and Git.
 
 ```sh
 npm install --global aperta-cli@beta
@@ -355,8 +355,10 @@ project-local Java symbols and call targets with annotation processing disabled.
 The TypeScript compiler adapter covers JavaScript, TypeScript, JSX/TSX, and the
 script portions of Vue single-file components. Compiler diagnostics downgrade
 semantic coverage to partial instead of hiding missing dependencies or invalid
-project configuration. Other languages retain the universal Git-level workflow
-without invented symbol or call-graph certainty.
+project configuration. Aperta builds with the native TypeScript 7 compiler and
+uses Microsoft's TypeScript 6 compatibility API for embedded semantic analysis
+until TypeScript 7 exposes its replacement API. Other languages retain the
+universal Git-level workflow without invented symbol or call-graph certainty.
 
 ## MVP beta workflow
 
