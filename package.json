@@ -1,0 +1,56 @@
+{
+  "name": "aperta-cli",
+  "version": "1.0.0-beta.1",
+  "description": "See which parts of your codebase you can actually explain.",
+  "type": "module",
+  "bin": {
+    "aperta": "bin/aperta.js"
+  },
+  "files": [
+    "bin",
+    "dist-cli",
+    "dashboard/dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "aperta": "node dist-cli/src/cli.js",
+    "dev": "vite --config dashboard/vite.config.ts",
+    "build": "npm run build:cli && npm run build:dashboard && npm run build:marketing",
+    "build:cli": "tsc -p tsconfig.build.json",
+    "build:dashboard": "vite build --config dashboard/vite.config.ts",
+    "dev:marketing": "vite --config marketing/vite.config.ts",
+    "build:marketing": "vite build --config marketing/vite.config.ts",
+    "test": "node --no-warnings --experimental-strip-types --test test/*.test.ts",
+    "check": "node dist-cli/src/cli.js --help",
+    "prepack": "npm run build:cli && npm run build:dashboard",
+    "prepublishOnly": "npm test"
+  },
+  "dependencies": {
+    "@vue/compiler-sfc": "^3.5.41",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@lucide/vue": "^1.33.0",
+    "@types/node": "^26.2.0",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "vite": "^7.1.3",
+    "vue": "^3.5.41"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Vequan23/aperta.git"
+  },
+  "homepage": "https://github.com/Vequan23/aperta#readme",
+  "bugs": {
+    "url": "https://github.com/Vequan23/aperta/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "beta"
+  }
+}

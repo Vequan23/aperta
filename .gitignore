@@ -1,0 +1,14 @@
+node_modules/
+.comprehension/*
+!.comprehension/.gitignore
+!.comprehension/project.json
+dist-cli/
+dashboard/dist/
+marketing/dist/
+
+# Local product planning snapshots; README.md is the public source of truth.
+MVP_CLOSURE.md
+PRODUCT_AUDIT.md
+
+.DS_Store
+npm-debug.log*

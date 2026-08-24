@@ -1,0 +1,27 @@
+name: Feature request
+description: Propose an improvement to Aperta
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow or comprehension gap is not served today?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: What would prove it works?
+  - type: textarea
+    id: authority
+    attributes:
+      label: Agent authority or privacy impact
+      description: Explain whether this changes tools, execution, stored data, or provider context.
