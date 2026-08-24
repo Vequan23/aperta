@@ -11,7 +11,7 @@ const exec = promisify(execFile);
 
 test("captures staged, unstaged, and untracked changes while ignoring aperta data", async () => {
   const root = await mkdtemp(join(tmpdir(), "aperta-git-"));
-  await exec("git", ["init", "-q", root]);
+  await exec("git", ["init", "-q", "-b", "main", root]);
   await exec("git", ["-C", root, "config", "user.email", "test@example.com"]);
   await exec("git", ["-C", root, "config", "user.name", "Aperta Test"]);
   await writeFile(join(root, "tracked.ts"), "const value = 1;\n");
