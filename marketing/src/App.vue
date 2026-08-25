@@ -3,7 +3,7 @@ import { ref } from "vue";
 import {
   ArrowRight, BookOpenCheck, BrainCircuit, Check, ChevronRight, CircleDot,
   Code2, Eye, FileCode2, GitBranch, GitFork, LockKeyhole,
-  Network, Sparkles, SquareTerminal, Zap,
+  Network, ShieldCheck, Sparkles, SquareTerminal, Zap,
 } from "@lucide/vue";
 
 const panther = ref(false);
