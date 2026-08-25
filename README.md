@@ -18,7 +18,7 @@
   <a href="https://www.npmjs.com/package/aperta-cli"><img alt="npm beta" src="https://img.shields.io/npm/v/aperta-cli/beta?label=npm%20beta&color=1686cc"></a>
   <a href="https://github.com/Vequan23/aperta/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Vequan23/aperta/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-  <img alt="Node 22.12+" src="https://img.shields.io/badge/node-%E2%89%A522.12-3c873a">
+  <img alt="Node 24 LTS recommended" src="https://img.shields.io/badge/node-24%20LTS%20recommended-3c873a">
 </p>
 
 > [!IMPORTANT]
@@ -50,7 +50,8 @@ the repository—it helps other builders find the project.
 
 ## Try it in 60 seconds
 
-Requires Node.js 22.12 or newer and Git.
+Requires Git and a supported Node.js LTS release. **Node 24 LTS is recommended**;
+Node 22.12 or newer remains supported through its maintenance window.
 
 ```sh
 npm install --global aperta-cli@beta

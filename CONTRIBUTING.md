@@ -14,7 +14,10 @@ Thanks for helping make generated code easier to understand and trust.
 
 ## Development
 
-Aperta requires Node.js 22.12 or newer and Git.
+Aperta uses Node.js 24 LTS for local development. Run `nvm use` from the
+repository root to select the version declared in `.nvmrc`. Node.js 22.12 or
+newer remains a supported compatibility target and is validated in CI alongside
+Node 24.
 
 ```sh
 npm ci
