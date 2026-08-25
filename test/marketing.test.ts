@@ -8,7 +8,11 @@ const root = join(import.meta.dirname, "..");
 test("marketing site is wired for an isolated Vercel build", async () => {
   const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
   const vercel = JSON.parse(await readFile(join(root, "vercel.json"), "utf8"));
+  const entry = await readFile(join(root, "marketing/src/main.ts"), "utf8");
   assert.equal(packageJson.scripts["build:marketing"], "vite build --config marketing/vite.config.ts");
+  assert.match(packageJson.devDependencies["osx-components"], /^\^0\.6\./);
+  assert.match(entry, /registerOsxComponents\(\)/);
+  assert.match(entry, /osx-components\/theme\.css/);
   assert.equal(vercel.buildCommand, "npm run build:marketing");
   assert.equal(vercel.outputDirectory, "marketing/dist");
 });

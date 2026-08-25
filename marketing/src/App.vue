@@ -2,8 +2,8 @@
 import { ref } from "vue";
 import {
   ArrowRight, BookOpenCheck, BrainCircuit, Check, ChevronRight, CircleDot,
-  Code2, Eye, FileCode2, GitBranch, GitFork, LockKeyhole, Menu, Moon,
-  Network, ShieldCheck, Sparkles, SquareTerminal, Sun, X, Zap,
+  Code2, Eye, FileCode2, GitBranch, GitFork, LockKeyhole,
+  Network, Sparkles, SquareTerminal, Zap,
 } from "@lucide/vue";
 
 const panther = ref(false);
@@ -21,10 +21,10 @@ const runtimes = ["Aperta Native", "Claude Code", "OpenCode", "Cursor"];
 </script>
 
 <template>
-  <div :class="['site-shell', { panther }]">
+  <div :class="['site-shell', { panther }]" :data-osx-theme="panther ? 'panther' : 'aqua'">
     <header class="site-nav">
       <a class="brand" href="#top" aria-label="Aperta home"><span class="brand-mark">a</span><span>aperta</span></a>
-      <button class="menu-button" type="button" :aria-expanded="menuOpen" aria-label="Toggle navigation" @click="menuOpen = !menuOpen"><X v-if="menuOpen" /><Menu v-else /></button>
+      <osx-icon-button class="menu-button" :icon="menuOpen ? 'close' : 'menu'" label="Toggle navigation" size="small" :pressed="menuOpen" @click="menuOpen = !menuOpen" />
       <nav :class="{ open: menuOpen }" aria-label="Primary navigation">
         <a href="#product" @click="menuOpen = false">Product</a>
         <a href="#proof" @click="menuOpen = false">Proof graph</a>
@@ -32,8 +32,10 @@ const runtimes = ["Aperta Native", "Claude Code", "OpenCode", "Cursor"];
         <a href="#privacy" @click="menuOpen = false">Privacy</a>
       </nav>
       <div class="nav-actions">
-        <button class="theme-toggle" type="button" :aria-label="panther ? 'Use Aqua theme' : 'Use Panther theme'" @click="panther = !panther"><Sun v-if="panther" /><Moon v-else /></button>
-        <a class="nav-github" href="https://github.com/Vequan23/aperta" target="_blank" rel="noreferrer"><GitFork /> GitHub</a>
+        <osx-tooltip :text="panther ? 'Use Aqua theme' : 'Use Panther theme'">
+          <osx-icon-button icon="palette" :label="panther ? 'Use Aqua theme' : 'Use Panther theme'" size="small" @click="panther = !panther" />
+        </osx-tooltip>
+        <osx-link class="nav-github" href="https://github.com/Vequan23/aperta" target="_blank" rel="noreferrer" external>GitHub</osx-link>
       </div>
     </header>
 
@@ -47,13 +49,16 @@ const runtimes = ["Aperta Native", "Claude Code", "OpenCode", "Cursor"];
             <a class="aqua-button primary" href="https://github.com/Vequan23/aperta" target="_blank" rel="noreferrer"><GitFork /> View on GitHub</a>
             <a class="aqua-button secondary" href="#product">See how it works <ArrowRight /></a>
           </div>
-          <div class="trust-row"><span><Check /> Open source</span><span><Check /> Provider neutral</span><span><Check /> Private by default</span></div>
+          <div class="trust-row"><osx-badge tone="success" label="Open source" dot /><osx-badge tone="info" label="Provider neutral" dot /><osx-badge tone="success" label="Private by default" dot /></div>
         </div>
 
         <div class="hero-product" aria-label="Aperta product preview">
-          <div class="mac-window hero-window">
-            <div class="titlebar"><div class="traffic"><i></i><i></i><i></i></div><span><b class="mini-mark">a</b> aperta <em>Comprehension</em></span><CircleDot /></div>
-            <div class="window-toolbar"><span><GitBranch /> auth-service <b>/ main</b></span><div><button>Build</button><button class="active">Understand</button></div></div>
+          <osx-window class="hero-window" title="aperta" subtitle="Comprehension">
+            <osx-icon slot="accessory" name="activity" :size="16" label="Watching repository" />
+            <osx-toolbar slot="toolbar" label="Repository context" compact>
+              <span slot="leading" class="repository-context"><osx-icon name="git-branch" :size="15" /> auth-service <b>/ main</b></span>
+              <osx-segmented-control slot="trailing" items="Build, Understand" value="Understand" label="Workspace mode" />
+            </osx-toolbar>
             <div class="preview-layout">
               <aside>
                 <p>REPOSITORY</p>
@@ -74,10 +79,11 @@ const runtimes = ["Aperta Native", "Claude Code", "OpenCode", "Cursor"];
                     <g class="node claim" transform="translate(230 111)"><rect width="166" height="76" rx="12"/><text x="83" y="29" text-anchor="middle">BEHAVIOR CLAIM</text><text x="83" y="54" text-anchor="middle">JWT is validated</text></g>
                   </svg>
                 </div>
-                <div class="proof-status"><ShieldCheck /><span><strong>Followable</strong> Evidence exists. One behavioral path remains unproven.</span><b>2.0</b></div>
+                <div class="proof-status"><osx-icon name="check" :size="24" label="Evidence status" /><span><strong>Followable</strong> Evidence exists. One behavioral path remains unproven.</span><osx-badge tone="warning" label="2.0" /></div>
               </div>
             </div>
-          </div>
+            <osx-status-bar slot="footer" label="Repository evidence connected" status="ready" detail="3 claims" />
+          </osx-window>
           <div class="floating-card left"><Zap /><span><b>Every change captured</b>Human or agent. Staged or unstaged.</span></div>
           <div class="floating-card right"><BookOpenCheck /><span><b>Ownership retained</b>Understanding survives the session.</span></div>
         </div>
@@ -105,16 +111,20 @@ const runtimes = ["Aperta Native", "Claude Code", "OpenCode", "Cursor"];
               <li><span><Check /></span><div><strong>Review the unknowns</strong><p>Direct attention toward behavior that is risky, untested, or understood by nobody.</p></div></li>
             </ul>
           </div>
-          <div class="memory-window mac-window">
-            <div class="titlebar"><div class="traffic"><i></i><i></i><i></i></div><span>Repository Memory</span><Network /></div>
-            <div class="memory-toolbar"><span>BEHAVIOR CLAIMS</span><b>12 connected files</b></div>
+          <osx-window class="memory-window" data-osx-theme="panther" title="Repository Memory" subtitle="Proof graph">
+            <osx-icon slot="accessory" name="activity" :size="17" label="Connected evidence" />
+            <osx-toolbar slot="toolbar" label="Behavior claims" compact>
+              <span slot="leading" class="memory-label">BEHAVIOR CLAIMS</span>
+              <osx-badge slot="trailing" tone="info" label="12 connected files" />
+            </osx-toolbar>
             <div class="claim-list">
               <article><i class="green"></i><div><small>PROVEN</small><strong>Expired access tokens are rejected</strong><p>SecurityConfig.java · JwtConfigurationTests.java</p></div><span>3 proofs</span></article>
               <article><i class="blue"></i><div><small>UNDERSTOOD</small><strong>Refresh tokens rotate after use</strong><p>JwtService.java · ownership session</p></div><span>3 / 3</span></article>
               <article><i class="amber"></i><div><small>STALE</small><strong>Issuer validation matches configuration</strong><p>Invalidated by application.yml change</p></div><span>Aug 23</span></article>
               <article><i></i><div><small>UNPROVEN</small><strong>Concurrent refresh attempts are safe</strong><p>No executed evidence attached</p></div><span>Review</span></article>
             </div>
-          </div>
+            <osx-status-bar slot="footer" label="Memory current" status="ready" detail="4 claims" />
+          </osx-window>
         </div>
       </section>
 
