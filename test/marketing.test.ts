@@ -11,7 +11,7 @@ test("marketing site is wired for an isolated Vercel build", async () => {
   const entry = await readFile(join(root, "marketing/src/main.ts"), "utf8");
   const viteConfig = await readFile(join(root, "marketing/vite.config.ts"), "utf8");
   assert.equal(packageJson.scripts["build:marketing"], "vite build --config marketing/vite.config.ts");
-  assert.match(packageJson.devDependencies["osx-components"], /^\^0\.6\./);
+  assert.match(packageJson.devDependencies["osx-components"], /^\^0\.8\./);
   assert.match(entry, /registerOsxComponents\(\)/);
   assert.match(entry, /osx-components\/theme\.css/);
   assert.match(viteConfig, /isCustomElement:\s*\(tag\)\s*=>\s*tag\.startsWith\("osx-"\)/);

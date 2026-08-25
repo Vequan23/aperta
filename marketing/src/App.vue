@@ -144,6 +144,25 @@ const runtimes = ["Aperta Native", "Claude Code", "OpenCode", "Cursor"];
         </div>
       </section>
 
+      <section class="ecosystem-placement section-wrap" aria-labelledby="ecosystem-title">
+        <div>
+          <p class="eyebrow"><GitBranch /> Also from the ecosystem</p>
+          <h2 id="ecosystem-title">Once the product works, earn the right attention.</h2>
+          <p>Distribution OS turns product truth into a human-governed distribution practice—without automating your identity.</p>
+        </div>
+        <osx-ecosystem-card
+          name="Distribution OS"
+          category="Founder distribution"
+          description="Find useful conversations, prepare evidence-grounded contributions, and learn what earns trust."
+          href="https://distribution-os-murex.vercel.app/"
+          action-label="Explore Distribution OS"
+          mark="D"
+          tone="success"
+          tracking-id="aperta-marketing-distribution"
+          compact
+        ></osx-ecosystem-card>
+      </section>
+
       <section class="final-cta section-wrap"><div><p class="eyebrow"><CircleDot /> Open source · beta</p><h2>Make every line of generated code explainable.</h2><p>Start building repository memory before the codebase outruns the people responsible for it.</p></div><a class="aqua-button primary large" href="https://github.com/Vequan23/aperta" target="_blank" rel="noreferrer"><GitFork /> Get Aperta <ArrowRight /></a></section>
     </main>
 
