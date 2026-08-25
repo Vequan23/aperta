@@ -177,7 +177,7 @@ export function classifyAgentError(reason: unknown): AgentErrorClass {
   if (/timed? out|timeout/.test(message)) return "Timeout";
   if (/older repository state|repository changed since|overwriting newer work|previous turn could not be restored|state conflict/.test(message)) return "StateConflict";
   if (/malformed json|unexpected .*json|after json at position|unterminated string in json|json input/.test(message)) return "InvalidModelOutput";
-  if (/provider returned|provider unavailable|fetch failed|network/.test(message)) return "ProviderError";
+  if (/provider returned|provider unavailable|fetch failed|network|(?:opencode|claude(?: code)?|cursor|codex) exited with code|exited with code \d+: no diagnostic output/.test(message)) return "ProviderError";
   if (/invalid path|unsupported agent action|write limit|write budget|must read|invalid search|invalid service|service action|missing content|outside the workspace|cannot (?:access|modify)|ignored file|local curl/.test(message)) return "InvalidArguments";
   if (/enoent|not found|does not exist|not executable|environment|no such file/.test(message)) return "UnexpectedEnvironment";
   if (/verification|check failed|tests? failed|build failed|lint failed|type.?check failed/.test(message)) return "VerificationFailure";

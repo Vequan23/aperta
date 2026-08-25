@@ -4,15 +4,18 @@ import { access, appendFile, mkdir, mkdtemp, readFile, stat, writeFile } from "n
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { appendEvent, auditLedger, defaultConfig, initializeStore, readLedger, repairLedger } from "../src/ledger.ts";
-import { inspectStoragePrivacy, privateProjectDir } from "../src/storage.ts";
+import { inspectProjectInitialization, inspectStoragePrivacy, privateProjectDir } from "../src/storage.ts";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { loadDashboardState } from "../src/dashboard-data.ts";
 
 const exec = promisify(execFile);
 
 test("initializes an append-only JSONL store", async () => {
   const root = await mkdtemp(join(tmpdir(), "aperta-"));
+  assert.equal((await inspectProjectInitialization(root)).initialized, false);
   assert.equal(await initializeStore(root), true);
+  assert.equal((await inspectProjectInitialization(root)).initialized, true);
   assert.equal(await initializeStore(root), false);
   const event = { id: "one", ts: new Date(0).toISOString(), repo: "demo", branch: "main", kind: "bypass" as const, reason: "unknown" as const };
   await appendEvent(root, event);
@@ -22,6 +25,16 @@ test("initializes an append-only JSONL store", async () => {
   assert.equal((await stat(join(privateProjectDir(root), "ledger.jsonl"))).mode & 0o777, 0o600);
   assert.equal(JSON.parse(await readFile(join(root, ".comprehension/project.json"), "utf8")).version, 1);
   await assert.rejects(() => access(join(root, ".comprehension/ledger.jsonl")));
+});
+
+test("read-only dashboard loading does not initialize project memory", async () => {
+  const root = await mkdtemp(join(tmpdir(), "aperta-read-only-dashboard-"));
+  await exec("git", ["init", "-q", root]);
+  await writeFile(join(root, "README.md"), "# Uninitialized repository\n");
+  await exec("git", ["-C", root, "add", "README.md"]);
+  const state = await loadDashboardState(root, undefined, [], { initialized: false });
+  assert.deepEqual(state.repositoryFiles, ["README.md"]);
+  await assert.rejects(() => access(join(root, ".comprehension")));
 });
 
 test("backs up and removes a corrupt trailing ledger record", async () => {

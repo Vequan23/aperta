@@ -15,6 +15,8 @@ import { applyAgentRun, listAgentConversations, runExternalAgent, runModelAgent,
 import { buildHarnessHealth } from "./harness-intelligence.ts";
 import { readGitWorkingStatus } from "./git.ts";
 import { loadRepositoryProofGraph } from "./proof-graph.ts";
+import { initializeStore } from "./ledger.ts";
+import { inspectProjectInitialization } from "./storage.ts";
 
 const mime = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -24,6 +26,10 @@ const mime = new Map([
   [".png", "image/png"],
   [".ico", "image/x-icon"],
 ]);
+
+class DashboardHttpError extends Error {
+  constructor(public readonly status: number, message: string) { super(message); }
+}
 
 function openBrowser(url: string): void {
   const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
@@ -59,22 +65,41 @@ export async function startDashboard(root: string, port: number, shouldOpen = tr
     return { status: observer.getStatus(), activity: await readObserverActivity(targetRoot) };
   }
   await observerContext(root);
+  async function requireInitialized(targetRoot: string) {
+    const status = await inspectProjectInitialization(targetRoot);
+    if (!status.initialized) throw new DashboardHttpError(409, "Aperta is not initialized for this project. Initialize it before using agents, captures, reviews, or learning memory.");
+    return status;
+  }
   async function runtimeCoachConfig(role: ModelRole = "builder") { return await activeModelConfig(role) ?? resolveCoachConfig(); }
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
       if (url.pathname === "/api/state") {
         const project = await resolveProject(url.searchParams.get("project") ?? undefined, root);
-        const observed = await observerContext(project.root);
+        const initialization = await inspectProjectInitialization(project.root);
+        const observed = initialization.initialized ? await observerContext(project.root) : { status: undefined, activity: [] };
         const projects = await listProjects();
-        const dashboard = await loadDashboardState(project.root, observed.status, observed.activity);
+        const dashboard = await loadDashboardState(project.root, observed.status, observed.activity, initialization);
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-        response.end(JSON.stringify({ ...dashboard, projectId: project.id,
+        response.end(JSON.stringify({ ...dashboard, initialization, projectId: project.id,
           projects: projects.map(({ id, name, available }) => ({ id, name, available })) }));
+        return;
+      }
+      if (url.pathname === "/api/project" && request.method === "POST") {
+        const chunks: Buffer[] = []; let size = 0;
+        for await (const chunk of request) { size += chunk.length; if (size > 100_000) throw new Error("Project request is too large"); chunks.push(chunk); }
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        if (body.action !== "initialize") throw new Error("Unknown project action");
+        const project = await resolveProject(body.projectId, root);
+        await initializeStore(project.root);
+        await observerContext(project.root);
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ initialization: await inspectProjectInitialization(project.root) }));
         return;
       }
       if (url.pathname === "/api/ownership" && request.method === "GET") {
         const project = await resolveProject(url.searchParams.get("project") ?? undefined, root);
+        await requireInitialized(project.root);
         const payload = await loadOwnershipBrief(project.root, url.searchParams.get("diffId") ?? "");
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify(payload));
@@ -96,6 +121,7 @@ export async function startDashboard(root: string, port: number, shouldOpen = tr
       }
       if (url.pathname === "/api/impact" && request.method === "GET") {
         const project = await resolveProject(url.searchParams.get("project") ?? undefined, root);
+        await requireInitialized(project.root);
         const payload = await loadImpactGraph(project.root, url.searchParams.get("diffId") ?? "");
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify(payload));
@@ -103,6 +129,7 @@ export async function startDashboard(root: string, port: number, shouldOpen = tr
       }
       if (url.pathname === "/api/proof" && request.method === "GET") {
         const project = await resolveProject(url.searchParams.get("project") ?? undefined, root);
+        await requireInitialized(project.root);
         const payload = await loadProofBrief(project.root, url.searchParams.get("diffId") ?? "");
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify(payload));
@@ -113,6 +140,7 @@ export async function startDashboard(root: string, port: number, shouldOpen = tr
         for await (const chunk of request) { size += chunk.length; if (size > 100_000) throw new Error("Proof request is too large"); chunks.push(chunk); }
         const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
         const project = await resolveProject(body.projectId, root);
+        await requireInitialized(project.root);
         const job = startJob("proof", `Proof for ${body.diffId ?? "capture"}`, (signal) => executeProof(project.root, body.diffId ?? "", signal));
         response.writeHead(202, { "content-type": "application/json; charset=utf-8" });
         response.end(JSON.stringify({ job }));
@@ -120,6 +148,7 @@ export async function startDashboard(root: string, port: number, shouldOpen = tr
       }
       if (url.pathname === "/api/probes" && request.method === "GET") {
         const project = await resolveProject(url.searchParams.get("project") ?? undefined, root);
+        await requireInitialized(project.root);
         const payload = await loadProbeLab(project.root, url.searchParams.get("diffId") ?? "");
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify(payload));
@@ -130,6 +159,7 @@ export async function startDashboard(root: string, port: number, shouldOpen = tr
         for await (const chunk of request) { size += chunk.length; if (size > 100_000) throw new Error("Probe request is too large"); chunks.push(chunk); }
         const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
         const project = await resolveProject(body.projectId, root);
+        await requireInitialized(project.root);
         const job = startJob("probe", `Probe ${body.probeId ?? ""}`, (signal) => runGeneratedProbe(project.root, body.diffId ?? "", body.probeId ?? "", signal));
         response.writeHead(202, { "content-type": "application/json; charset=utf-8" });
         response.end(JSON.stringify({ job }));
@@ -145,6 +175,7 @@ export async function startDashboard(root: string, port: number, shouldOpen = tr
         for await (const chunk of request) { size += chunk.length; if (size > 100_000) throw new Error("Coach request is too large"); chunks.push(chunk); }
         const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
         const project = await resolveProject(body.projectId, root);
+        await requireInitialized(project.root);
         const config = await runtimeCoachConfig("coach");
         const status = coachStatusFromConfig(config);
         if (!status.enabled) throw new Error(status.reason ?? "Aperta Coach is not configured");
@@ -186,6 +217,7 @@ export async function startDashboard(root: string, port: number, shouldOpen = tr
       }
       if (url.pathname === "/api/agents" && request.method === "GET") {
         const project = await resolveProject(url.searchParams.get("project") ?? undefined, root);
+        await requireInitialized(project.root);
         const conversations = await listAgentConversations(project.root);
         const coach = coachStatusFromConfig(await runtimeCoachConfig("builder"));
         const runtime = await activeAgentRuntime();
@@ -195,6 +227,7 @@ export async function startDashboard(root: string, port: number, shouldOpen = tr
       }
       if (url.pathname === "/api/harness" && request.method === "GET") {
         const project = await resolveProject(url.searchParams.get("project") ?? undefined, root);
+        await requireInitialized(project.root);
         const payload = await buildHarnessHealth(project.root);
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify(payload));
@@ -202,6 +235,7 @@ export async function startDashboard(root: string, port: number, shouldOpen = tr
       }
       if (url.pathname === "/api/proof-graph" && request.method === "GET") {
         const project = await resolveProject(url.searchParams.get("project") ?? undefined, root);
+        await requireInitialized(project.root);
         const payload = await loadRepositoryProofGraph(project.root);
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify(payload));
@@ -212,6 +246,7 @@ export async function startDashboard(root: string, port: number, shouldOpen = tr
         for await (const chunk of request) { size += chunk.length; if (size > 100_000) throw new Error("Agent request is too large"); chunks.push(chunk); }
         const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
         const project = await resolveProject(body.projectId, root);
+        await requireInitialized(project.root);
         if (body.action === "start") {
           const runtime = await activeAgentRuntime();
           const config = runtime.kind === "aperta" ? await runtimeCoachConfig() : null;
@@ -259,6 +294,7 @@ export async function startDashboard(root: string, port: number, shouldOpen = tr
         const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
         if (![1, 2, 3].includes(body.score)) throw new Error("Score must be 1, 2, or 3");
         const project = await resolveProject(body.projectId, root);
+        await requireInitialized(project.root);
         const payload = await recordOwnershipReview(project.root, body);
         response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
         response.end(JSON.stringify(payload));
@@ -275,6 +311,7 @@ export async function startDashboard(root: string, port: number, shouldOpen = tr
         const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
         if (body.action !== "skip") throw new Error("Unknown queue action");
         const project = await resolveProject(body.projectId, root);
+        await requireInitialized(project.root);
         const payload = await recordQueueDisposition(project.root, { diffId: body.diffId, action: body.action });
         response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
         response.end(JSON.stringify(payload));
@@ -296,7 +333,7 @@ export async function startDashboard(root: string, port: number, shouldOpen = tr
         console.error(`Dashboard request failed after response start: ${(error as Error).message}`);
         return;
       }
-      response.writeHead(500, { "content-type": "application/json; charset=utf-8" });
+      response.writeHead(error instanceof DashboardHttpError ? error.status : 500, { "content-type": "application/json; charset=utf-8" });
       response.end(JSON.stringify({ error: (error as Error).message }));
     }
   });

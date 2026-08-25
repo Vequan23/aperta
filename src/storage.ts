@@ -22,6 +22,12 @@ export interface StorageMigration {
   privateDirectory: string;
 }
 
+export interface ProjectInitializationStatus {
+  initialized: boolean;
+  repositoryIdentity: string;
+  privateDirectory: string | null;
+}
+
 const migrations = new Map<string, StorageMigration>();
 const initialized = new Set<string>();
 
@@ -151,4 +157,22 @@ export async function inspectStoragePrivacy(root: string) {
     legacyPaths: legacy.filter((path): path is string => Boolean(path)),
     trackedPrivatePaths: await trackedLegacyFiles(root),
   };
+}
+
+export async function inspectProjectInitialization(root: string): Promise<ProjectInitializationStatus> {
+  const repositoryIdentity = join(root, APERTA_DIR, PROJECT_FILE);
+  try {
+    const parsed = JSON.parse(await readFile(repositoryIdentity, "utf8")) as Partial<ProjectIdentity>;
+    if (parsed.version !== 1 || typeof parsed.id !== "string" || !/^[a-f0-9-]{16,64}$/i.test(parsed.id)) {
+      return { initialized: false, repositoryIdentity, privateDirectory: null };
+    }
+    const privateDirectory = join(apertaHome(), "repositories", parsed.id);
+    const [config, ledger] = await Promise.all([
+      exists(join(privateDirectory, "config.json")),
+      exists(join(privateDirectory, "ledger.jsonl")),
+    ]);
+    return { initialized: config && ledger, repositoryIdentity, privateDirectory };
+  } catch {
+    return { initialized: false, repositoryIdentity, privateDirectory: null };
+  }
 }

@@ -15,6 +15,7 @@ test("classifies expected harness failures without hiding unknown defects", () =
   assert.equal(classifyAgentError(new Error("This conversation is based on an older repository state")), "StateConflict");
   assert.equal(classifyAgentError(new Error("Agent requested an invalid path")), "InvalidArguments");
   assert.equal(classifyAgentError(new Error("Verification timed out after three minutes")), "Timeout");
+  assert.equal(classifyAgentError(new Error("OpenCode exited with code 1: no diagnostic output")), "ProviderError");
   assert.equal(classifyAgentError(new Error("Something unprecedented happened")), "HarnessBug");
 });
 

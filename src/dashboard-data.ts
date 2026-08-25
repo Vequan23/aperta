@@ -1,4 +1,4 @@
-import { appendEvents, eventBase, readConfig, readDiffEvidence, readLedger } from "./ledger.ts";
+import { appendEvents, defaultConfig, eventBase, readConfig, readDiffEvidence, readLedger } from "./ledger.ts";
 import { currentBranch } from "./git.ts";
 import { buildComprehensionMap } from "./map.ts";
 import type { ConfidenceEvent, ConfidenceScore, DiffEvent, ExplanationEvent, LedgerEvent, OwnershipAnswer, OwnershipEvidenceEvent, QueueDispositionEvent, ReviewEvent, SessionCompleteEvent } from "./types.ts";
@@ -49,8 +49,10 @@ function changeStory(diff: DiffEvent, patch: string, intent: string | null) {
   };
 }
 
-export async function loadDashboardState(root: string, observer?: ObserverStatus, observerActivity: ObserverActivity[] = []) {
-  const [events, config, repositoryFiles] = await Promise.all([readLedger(root), readConfig(root), listRepositoryFiles(root)]);
+export async function loadDashboardState(root: string, observer?: ObserverStatus, observerActivity: ObserverActivity[] = [], options: { initialized?: boolean } = {}) {
+  const [events, config, repositoryFiles] = options.initialized === false
+    ? [[], defaultConfig, await listRepositoryFiles(root)] as [LedgerEvent[], typeof defaultConfig, string[]]
+    : await Promise.all([readLedger(root), readConfig(root), listRepositoryFiles(root)]);
   const files = buildComprehensionMap(events, config.confidenceHalfLifeDays);
   const diffs = events.filter((event): event is DiffEvent => event.kind === "diff");
   const ratings = events.filter((event): event is RatingEvent => event.kind === "confidence" || event.kind === "review");

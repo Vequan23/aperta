@@ -23,11 +23,38 @@ test("dashboard typography never declares text below the 12px accessibility floo
   assert.match(styles, /\.window \{ width: min\(1640px, 100%\)/);
 });
 
+test("Panther is the first-run theme without overriding a saved preference", async () => {
+  const root = join(import.meta.dirname, "..");
+  const app = await readFile(join(root, "dashboard/src/App.vue"), "utf8");
+  assert.match(app, /savedTheme === "plain" \|\| savedTheme === "snow" \|\| savedTheme === "panther"/);
+  assert.match(app, /: "panther",/);
+});
+
 test("agent composer sends on Enter while preserving Shift Enter for new lines", async () => {
   const root = join(import.meta.dirname, "..");
   const app = await readFile(join(root, "dashboard/src/App.vue"), "utf8");
   assert.match(app, /@keydown\.enter\.exact\.prevent="startAgentRun"/);
   assert.match(app, /Enter to send · Shift\+Enter for a new line/);
+});
+
+test("uninitialized projects receive an explicit setup state and action", async () => {
+  const root = join(import.meta.dirname, "..");
+  const app = await readFile(join(root, "dashboard/src/App.vue"), "utf8");
+  assert.match(app, /Aperta isn’t initialized for \{\{ state\.repo \}\}/);
+  assert.match(app, /Repository and Git browsing are available/);
+  assert.match(app, /@click="initializeProject"/);
+  assert.match(app, /!state\?\.initialization\.initialized/);
+});
+
+test("ownership side panels expose adjustable keyboard-accessible separators", async () => {
+  const root = join(import.meta.dirname, "..");
+  const app = await readFile(join(root, "dashboard/src/App.vue"), "utf8");
+  const styles = await readFile(join(root, "dashboard/src/style.css"), "utf8");
+  assert.match(app, /aria-label="Resize change briefing panel"/);
+  assert.match(app, /aria-label="Resize learning panel"/);
+  assert.match(app, /@keydown\.left\.prevent="resizeOwnershipPanelBy/);
+  assert.match(styles, /\.review-body-wide \{ grid-template-columns: var\(--ownership-left-width,360px\) 7px minmax\(480px,1fr\) 7px var\(--ownership-right-width,460px\)/);
+  assert.match(styles, /\.ownership-resizer:focus-visible/);
 });
 
 test("completed agent responses open the most useful result and render responses first", async () => {
@@ -56,6 +83,8 @@ test("agent workbench routes to model settings and preserves a return path", asy
   assert.match(app, /v-if="settingsOpenedFromAgents"/);
   assert.match(app, /@click="returnToAgentWorkbench"/);
   assert.match(app, /← Agent Workbench/);
+  assert.doesNotMatch(app, /workbench-engine-chip/);
+  assert.match(app, /class="agent-run-summary"/);
 });
 
 test("no-change responses own a bounded scroll region on the Changes tab", async () => {
@@ -113,6 +142,7 @@ test("Lucide navigation icons do not leak replacement chevrons into labels", asy
   assert.match(app, /from "@lucide\/vue"/);
   assert.doesNotMatch(app, /<\/(?:Sparkles|LayoutGrid|ListChecks|RefreshCw|GitFork|Clock3|NotebookPen|Activity|Gauge|Settings)>\s*&gt;/);
   assert.doesNotMatch(app, /<\w+[^>]*class="nav-icon"[^>]*\/>\s*>\s*(?:\{\{|<span)/);
+  assert.doesNotMatch(app, /\/>\s*>\s*</);
   assert.match(app, /:is="agentActionIcon\(action\)"/);
   assert.match(app, /:is="observerActivityIcon\(entry\)"/);
   assert.match(app, /:is="harnessSignalIcon\(signal\)"/);
@@ -120,6 +150,34 @@ test("Lucide navigation icons do not leak replacement chevrons into labels", asy
   assert.match(app, /<X class="nav-icon" aria-hidden="true" \/>/);
   assert.match(app, /class="close-review icon-close"/);
   assert.match(styles, /\.icon-close \{ width: 30px; height: 30px;/);
+});
+
+test("Impact Graph uses Lucide components instead of text glyph icons", async () => {
+  const root = join(import.meta.dirname, "..");
+  const app = await readFile(join(root, "dashboard/src/App.vue"), "utf8");
+  const start = app.indexOf(`<template v-else-if="view === 'impact'">`);
+  const end = app.indexOf(`<template v-else-if="view === 'proofgraph'">`, start);
+  const impact = app.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.match(impact, /<LoaderCircle class="impact-spinner"/);
+  assert.match(impact, /class="capability-icon"/);
+  assert.match(impact, /:is="impactNodeIcon\(node\.kind\)"/);
+  assert.match(impact, /<ArrowRight/);
+  assert.doesNotMatch(impact, /[✓▶→]/);
+});
+
+test("Agent Workbench uses Lucide components for status and response icons", async () => {
+  const root = join(import.meta.dirname, "..");
+  const app = await readFile(join(root, "dashboard/src/App.vue"), "utf8");
+  const start = app.indexOf(`<template v-else-if="view === 'agents'">`);
+  const end = app.indexOf(`<template v-else-if="view === 'settings'">`, start);
+  const workbench = app.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.match(workbench, /<CircleCheck/);
+  assert.match(workbench, /<CircleAlert/);
+  assert.match(workbench, /<LoaderCircle class="agent-loader"/);
+  assert.match(workbench, /<Sparkles aria-hidden="true"/);
+  assert.doesNotMatch(workbench, /[✓✦△▶↗＋]/);
 });
 
 test("collapsed navigation exposes keyboard and pointer tooltips", async () => {

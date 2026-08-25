@@ -4,13 +4,19 @@ import {
   Activity,
   ArrowLeft,
   ArrowRight,
+  ArrowUpRight,
   BadgeCheck,
+  Box,
   Check,
   Circle,
   CircleAlert,
   CircleCheck,
+  CircleMinus,
+  Code2,
   CornerDownRight,
   Ellipsis,
+  FileCode,
+  FlaskConical,
   Gauge,
   GitBranch,
   GitCommitHorizontal,
@@ -18,18 +24,23 @@ import {
   LayoutGrid,
   ListChecks,
   ListTree,
+  LoaderCircle,
+  LogIn,
   NotebookPen,
+  Package,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
   Search,
   Server,
   Settings,
+  Settings2,
   ShieldCheck,
   SquarePen,
   Sparkles,
   TriangleAlert,
   Play,
+  Plus,
   X,
 } from "@lucide/vue";
 import { parsePatch } from "./diff.ts";
@@ -531,6 +542,11 @@ type State = {
   };
   observerActivity: ObserverActivity[];
   projectId: string;
+  initialization: {
+    initialized: boolean;
+    repositoryIdentity: string;
+    privateDirectory: string | null;
+  };
   projects: Project[];
   summary: {
     averageScore: number | null;
@@ -545,6 +561,8 @@ type State = {
 
 const state = ref<State | null>(null);
 const error = ref("");
+const initializingProject = ref(false);
+const initializationError = ref("");
 type DashboardView =
   | "map"
   | "queue"
@@ -576,7 +594,9 @@ const selectedPath = ref("");
 type Theme = "snow" | "panther" | "plain";
 const savedTheme = localStorage.getItem("aperta-theme");
 const theme = ref<Theme>(
-  savedTheme === "plain" || savedTheme === "panther" ? savedTheme : "snow",
+  savedTheme === "plain" || savedTheme === "snow" || savedTheme === "panther"
+    ? savedTheme
+    : "panther",
 );
 const sidebarCollapsed = ref(
   localStorage.getItem("aperta-sidebar-collapsed") === "true",
@@ -601,6 +621,26 @@ const agentPanelWidth = ref(
     savedAgentPanelWidth <= 520
     ? savedAgentPanelWidth
     : 420,
+);
+const savedOwnershipLeftWidth = Number(
+  localStorage.getItem("aperta-ownership-left-width"),
+);
+const ownershipLeftWidth = ref(
+  Number.isFinite(savedOwnershipLeftWidth) &&
+    savedOwnershipLeftWidth >= 260 &&
+    savedOwnershipLeftWidth <= 520
+    ? savedOwnershipLeftWidth
+    : 360,
+);
+const savedOwnershipRightWidth = Number(
+  localStorage.getItem("aperta-ownership-right-width"),
+);
+const ownershipRightWidth = ref(
+  Number.isFinite(savedOwnershipRightWidth) &&
+    savedOwnershipRightWidth >= 340 &&
+    savedOwnershipRightWidth <= 620
+    ? savedOwnershipRightWidth
+    : 460,
 );
 const agentPaneOpen = ref(
   localStorage.getItem("aperta-agent-pane-open") !== "false",
@@ -1244,11 +1284,52 @@ function beginAgentPanelResize(event: PointerEvent) {
   window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", stop, { once: true });
 }
+function setOwnershipPanelWidth(side: "left" | "right", width: number) {
+  const bounds = side === "left" ? [260, 520] : [340, 620];
+  const value = Math.max(bounds[0], Math.min(bounds[1], Math.round(width)));
+  if (side === "left") ownershipLeftWidth.value = value;
+  else ownershipRightWidth.value = value;
+  localStorage.setItem(`aperta-ownership-${side}-width`, String(value));
+}
+function resizeOwnershipPanelBy(side: "left" | "right", delta: number) {
+  setOwnershipPanelWidth(
+    side,
+    (side === "left" ? ownershipLeftWidth.value : ownershipRightWidth.value) + delta,
+  );
+}
+function beginOwnershipPanelResize(side: "left" | "right", event: PointerEvent) {
+  const startX = event.clientX;
+  const startWidth = side === "left" ? ownershipLeftWidth.value : ownershipRightWidth.value;
+  const move = (next: PointerEvent) => {
+    const delta = next.clientX - startX;
+    setOwnershipPanelWidth(side, startWidth + (side === "left" ? delta : -delta));
+  };
+  const stop = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", stop);
+    document.body.classList.remove("resizing-ownership-pane");
+  };
+  document.body.classList.add("resizing-ownership-pane");
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", stop, { once: true });
+}
 function proofVerdict(nodeId: string) {
   return proofVerdicts.value.get(nodeId) ?? "unproven";
 }
 function evidenceLevel(node: ImpactNode) {
   return proofVerdict(node.id) === "proven" ? "proven" : node.evidence.level;
+}
+
+function impactNodeIcon(kind: ImpactNode["kind"]) {
+  return {
+    file: FileCode,
+    class: Box,
+    method: Code2,
+    dependency: Package,
+    test: FlaskConical,
+    config: Settings2,
+    entrypoint: LogIn,
+  }[kind];
 }
 function evidenceDetail(node: ImpactNode) {
   return proofVerdict(node.id) === "proven"
@@ -1651,6 +1732,26 @@ async function switchProject(id: string) {
   if (view.value === "proofgraph") await loadRepositoryProofGraph();
 }
 
+async function initializeProject() {
+  if (!state.value || state.value.initialization.initialized || initializingProject.value) return;
+  initializingProject.value = true;
+  initializationError.value = "";
+  try {
+    const response = await fetch("/api/project", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "initialize", projectId: projectId.value }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error ?? "Could not initialize Aperta");
+    await refresh();
+  } catch (reason) {
+    initializationError.value = reason instanceof Error ? reason.message : String(reason);
+  } finally {
+    initializingProject.value = false;
+  }
+}
+
 async function loadRepositoryProofGraph() {
   repositoryProofLoading.value = true;
   repositoryProofError.value = "";
@@ -1917,6 +2018,10 @@ async function showGit() {
   await loadGitStatus();
 }
 async function startAgentRun() {
+  if (!state.value?.initialization.initialized) {
+    agentError.value = "Initialize Aperta for this project before starting an agent run.";
+    return;
+  }
   if (agentRunning.value || agentIntent.value.trim().length < 10) return;
   const submittedIntent = agentIntent.value.trim();
   let accepted = false;
@@ -2201,8 +2306,26 @@ onUnmounted(() => {
         Reading the comprehension ledger…
       </div>
 
+      <section
+        v-if="state && !error && !state.initialization.initialized"
+        class="initialization-banner"
+        role="status"
+        aria-live="polite"
+      >
+        <CircleAlert aria-hidden="true" />
+        <div>
+          <strong>Aperta isn’t initialized for {{ state.repo }}</strong>
+          <span>Repository and Git browsing are available. Agent runs, capture history, reviews, and learning memory stay off until you initialize this project.</span>
+          <code>aperta init</code>
+          <small v-if="initializationError">{{ initializationError }}</small>
+        </div>
+        <button type="button" :disabled="initializingProject" @click="initializeProject">
+          {{ initializingProject ? "Initializing…" : "Initialize Aperta" }}
+        </button>
+      </section>
+
       <div
-        v-else
+        v-if="state && !error"
         :class="['workspace', { 'sidebar-collapsed': sidebarCollapsed }]"
       >
         <aside class="sidebar" aria-label="Primary navigation">
@@ -2779,7 +2902,7 @@ onUnmounted(() => {
               >
             </div>
             <div v-if="impactLoading" class="impact-loading">
-              <div class="spinner"></div>
+              <LoaderCircle class="impact-spinner" aria-hidden="true" />
               Tracing repository relationships…
             </div>
             <div v-else-if="impact" class="impact-shell">
@@ -2812,13 +2935,11 @@ onUnmounted(() => {
                     :key="capability.id"
                     :class="capability.status"
                   >
-                    <i>{{
-                      capability.status === "available"
-                        ? "✓"
-                        : capability.status === "partial"
-                          ? "~"
-                          : "—"
-                    }}</i>
+                    <span class="capability-icon" aria-hidden="true">
+                      <CircleCheck v-if="capability.status === 'available'" />
+                      <CircleAlert v-else-if="capability.status === 'partial'" />
+                      <CircleMinus v-else />
+                    </span>
                     <div>
                       <strong>{{ capability.label }}</strong
                       ><small>{{ capability.detail }}</small>
@@ -2840,13 +2961,9 @@ onUnmounted(() => {
                 :class="['proof-engine', proof.latest?.status ?? 'ready']"
               >
                 <div class="proof-orb">
-                  <span>{{
-                    proof.latest?.status === "proven"
-                      ? "✓"
-                      : proof.latest?.status === "regressed"
-                        ? "!"
-                        : "▶"
-                  }}</span>
+                  <CircleCheck v-if="proof.latest?.status === 'proven'" aria-hidden="true" />
+                  <TriangleAlert v-else-if="proof.latest?.status === 'regressed'" aria-hidden="true" />
+                  <Play v-else aria-hidden="true" />
                 </div>
                 <div class="proof-plan">
                   <p class="eyebrow">
@@ -3081,7 +3198,7 @@ onUnmounted(() => {
               <div class="impact-canvas">
                 <section class="impact-lane">
                   <header>
-                    <span>1</span>
+                    <span><GitCommitHorizontal aria-hidden="true" /></span>
                     <div>
                       <strong>Changed behavior</strong
                       ><small>Added, modified, or removed</small>
@@ -3098,7 +3215,10 @@ onUnmounted(() => {
                     ]"
                     @click="selectedImpactNodeId = node.id"
                   >
-                    <i>{{ node.kind }}</i
+                    <span class="impact-node-kind">
+                      <component :is="impactNodeIcon(node.kind)" aria-hidden="true" />
+                      <span>{{ node.kind }}</span>
+                    </span
                     ><strong>{{ node.label }}</strong
                     ><em :class="['evidence-badge', evidenceLevel(node)]">{{
                       evidenceLevel(node)
@@ -3109,10 +3229,10 @@ onUnmounted(() => {
                     No code symbols detected
                   </div>
                 </section>
-                <div class="impact-arrow" aria-hidden="true">→</div>
+                <div class="impact-arrow" aria-hidden="true"><ArrowRight /></div>
                 <section class="impact-lane">
                   <header>
-                    <span>2</span>
+                    <span><GitFork aria-hidden="true" /></span>
                     <div>
                       <strong>Dependencies & callers</strong
                       ><small>Repository blast radius</small>
@@ -3129,7 +3249,10 @@ onUnmounted(() => {
                     ]"
                     @click="selectedImpactNodeId = node.id"
                   >
-                    <i>{{ node.kind }}</i
+                    <span class="impact-node-kind">
+                      <component :is="impactNodeIcon(node.kind)" aria-hidden="true" />
+                      <span>{{ node.kind }}</span>
+                    </span
                     ><strong>{{ node.label }}</strong
                     ><em :class="['evidence-badge', evidenceLevel(node)]">{{
                       evidenceLevel(node)
@@ -3140,10 +3263,10 @@ onUnmounted(() => {
                     No external caller found in tracked source
                   </div>
                 </section>
-                <div class="impact-arrow" aria-hidden="true">→</div>
+                <div class="impact-arrow" aria-hidden="true"><ArrowRight /></div>
                 <section class="impact-lane evidence">
                   <header>
-                    <span>3</span>
+                    <span><ShieldCheck aria-hidden="true" /></span>
                     <div>
                       <strong>Proof & unknowns</strong
                       ><small>What evidence can defend</small>
@@ -3160,7 +3283,9 @@ onUnmounted(() => {
                     ]"
                     @click="selectedImpactNodeId = node.id"
                   >
-                    <i>test</i><strong>{{ node.label }}</strong
+                    <span class="impact-node-kind">
+                      <FlaskConical aria-hidden="true" /><span>test</span>
+                    </span><strong>{{ node.label }}</strong
                     ><em :class="['evidence-badge', evidenceLevel(node)]">{{
                       evidenceLevel(node)
                     }}</em
@@ -3171,7 +3296,7 @@ onUnmounted(() => {
                     :key="item"
                     class="unproven-node"
                   >
-                    <i>NEEDS PROBE</i><strong>{{ item }}</strong>
+                    <span class="unproven-label"><CircleAlert aria-hidden="true" />NEEDS PROBE</span><strong>{{ item }}</strong>
                   </article>
                 </section>
               </div>
@@ -3226,7 +3351,7 @@ onUnmounted(() => {
                 </p>
               </div>
               <button class="impact-review" @click="openDiff(impactDiffId)">
-                Turn this graph into an ownership session →
+                Turn this graph into an ownership session <ArrowRight aria-hidden="true" />
               </button>
             </div>
             <div v-else class="empty-state">
@@ -3741,24 +3866,19 @@ onUnmounted(() => {
                       Model settings
                     </button>
                     <button v-if="!agentPaneOpen" @click="setAgentPaneOpen(true)">
-                      Show agent pane</button
-                    ><span
-                      v-else
-                      class="workbench-engine-chip"
-                      title="Current runtime and model for new turns"
-                    >Current: {{ agentEngineSummary }}</span>
+                      Show agent pane
+                    </button>
                   </div>
                 </header>
                 <section v-if="selectedAgentRun" class="agent-review">
-                  <header>
+                  <header class="agent-run-summary">
                     <div>
-                      <p class="eyebrow">
-                        RUN ENGINE · {{ selectedAgentRun.provider }} ·
-                        {{ selectedAgentRun.model }}
-                      </p>
                       <h3 v-if="selectedAgentRun.intent !== selectedAgentConversation?.title">
                         {{ selectedAgentRun.intent }}
                       </h3>
+                      <p class="agent-run-engine">
+                        {{ selectedAgentRun.provider }} · {{ selectedAgentRun.model }}
+                      </p>
                     </div>
                     <span
                       :class="['agent-run-status', selectedAgentRun.status]"
@@ -3781,7 +3901,10 @@ onUnmounted(() => {
                       @click="agentReviewTab = 'understand'"
                     >
                       Understand
-                      <b>{{ selectedAgentRun.understanding?.completedAt ? '✓' : '?' }}</b>
+                      <b>
+                        <CircleCheck v-if="selectedAgentRun.understanding?.completedAt" aria-hidden="true" />
+                        <Circle v-else aria-hidden="true" />
+                      </b>
                     </button><button
                       v-if="selectedAgentRun.status !== 'no-changes'"
                       role="tab"
@@ -3821,13 +3944,11 @@ onUnmounted(() => {
                       @click="agentReviewTab = 'checks'"
                     >
                       Checks
-                      <b>{{
-                        selectedAgentRun.verification.status === "passed"
-                          ? "✓"
-                          : selectedAgentRun.verification.status === "failed"
-                            ? "!"
-                            : "—"
-                      }}</b></button
+                      <b>
+                        <CircleCheck v-if="selectedAgentRun.verification.status === 'passed'" aria-hidden="true" />
+                        <CircleAlert v-else-if="selectedAgentRun.verification.status === 'failed'" aria-hidden="true" />
+                        <CircleMinus v-else aria-hidden="true" />
+                      </b></button
                     ><button
                       role="tab"
                       :aria-selected="agentReviewTab === 'activity'"
@@ -3949,13 +4070,11 @@ onUnmounted(() => {
                             :key="step.id"
                             :class="step.status"
                           >
-                            <span>{{
-                              step.status === "complete"
-                                ? "✓"
-                                : step.status === "blocked"
-                                  ? "!"
-                                  : index + 1
-                            }}</span>
+                            <span>
+                              <Check v-if="step.status === 'complete'" aria-hidden="true" />
+                              <CircleAlert v-else-if="step.status === 'blocked'" aria-hidden="true" />
+                              <template v-else>{{ index + 1 }}</template>
+                            </span>
                             <div>
                               <strong>{{ step.title }}</strong>
                               <p>{{ step.detail }}</p>
@@ -3985,15 +4104,12 @@ onUnmounted(() => {
                           :key="criterion.id"
                           :class="['criterion-row', criterion.status]"
                         >
-                          <span>{{
-                            criterion.status === "proven"
-                              ? "✓"
-                              : criterion.status === "failed"
-                                ? "!"
-                                : criterion.status === "supported"
-                                  ? "≈"
-                                  : "—"
-                          }}</span>
+                          <span>
+                            <Check v-if="criterion.status === 'proven'" aria-hidden="true" />
+                            <CircleAlert v-else-if="criterion.status === 'failed'" aria-hidden="true" />
+                            <BadgeCheck v-else-if="criterion.status === 'supported'" aria-hidden="true" />
+                            <CircleMinus v-else aria-hidden="true" />
+                          </span>
                           <div>
                             <header>
                               <strong>{{ criterion.text }}</strong
@@ -4019,20 +4135,18 @@ onUnmounted(() => {
                           :key="finding.title"
                           :class="finding.severity"
                         >
-                          <span>{{
-                            finding.severity === "blocker"
-                              ? "!"
-                              : finding.severity === "warning"
-                                ? "△"
-                                : "✓"
-                          }}</span>
+                          <span>
+                            <CircleAlert v-if="finding.severity === 'blocker'" aria-hidden="true" />
+                            <TriangleAlert v-else-if="finding.severity === 'warning'" aria-hidden="true" />
+                            <CircleCheck v-else aria-hidden="true" />
+                          </span>
                           <div>
                             <strong>{{ finding.title }}</strong>
                             <p>{{ finding.detail }}</p>
                           </div>
                         </div>
                         <div v-if="!selectedAgentRun.critique" class="pending">
-                          <span>…</span>
+                          <span><Ellipsis aria-hidden="true" /></span>
                           <div>
                             <strong>Critique pending</strong>
                             <p>
@@ -4107,7 +4221,7 @@ onUnmounted(() => {
                       v-else-if="selectedAgentRun.status === 'no-changes'"
                       class="agent-no-change"
                     >
-                      <div class="agent-no-change-icon">✓</div>
+                      <div class="agent-no-change-icon"><CircleCheck aria-hidden="true" /></div>
                       <div>
                         <p class="eyebrow">ANALYSIS COMPLETE</p>
                         <h4>No files were changed</h4>
@@ -4128,7 +4242,10 @@ onUnmounted(() => {
                             :key="capability.id"
                             :class="capability.status"
                           >
-                            <span>{{ capability.status === "passed" || capability.status === "reachable" ? "✓" : "!" }}</span>
+                            <span>
+                              <CircleCheck v-if="capability.status === 'passed' || capability.status === 'reachable'" aria-hidden="true" />
+                              <CircleAlert v-else aria-hidden="true" />
+                            </span>
                             <div>
                               <strong>{{ capability.label }}</strong>
                               <p>{{ capability.summary }}</p>
@@ -4169,13 +4286,11 @@ onUnmounted(() => {
                     class="agent-checks"
                   >
                     <header :class="selectedAgentRun.verification.status">
-                      <span>{{
-                        selectedAgentRun.verification.status === "passed"
-                          ? "✓"
-                          : selectedAgentRun.verification.status === "failed"
-                            ? "!"
-                            : "—"
-                      }}</span>
+                      <span>
+                        <CircleCheck v-if="selectedAgentRun.verification.status === 'passed'" aria-hidden="true" />
+                        <CircleAlert v-else-if="selectedAgentRun.verification.status === 'failed'" aria-hidden="true" />
+                        <CircleMinus v-else aria-hidden="true" />
+                      </span>
                       <div>
                         <strong>{{
                           selectedAgentRun.verification.status === "passed"
@@ -4200,15 +4315,10 @@ onUnmounted(() => {
                       class="verification-attempt baseline"
                     >
                       <h4>
-                        <span
-                          :class="selectedAgentRun.verification.baseline.status"
-                          >{{
-                            selectedAgentRun.verification.baseline.status ===
-                            "passed"
-                              ? "✓"
-                              : "!"
-                          }}</span
-                        >
+                        <span :class="selectedAgentRun.verification.baseline.status">
+                          <CircleCheck v-if="selectedAgentRun.verification.baseline.status === 'passed'" aria-hidden="true" />
+                          <CircleAlert v-else aria-hidden="true" />
+                        </span>
                         Pre-change baseline
                         <small>{{
                           new Date(
@@ -4223,9 +4333,10 @@ onUnmounted(() => {
                         :class="['verification-check', check.status]"
                       >
                         <summary>
-                          <span>{{
-                            check.status === "passed" ? "✓" : "!"
-                          }}</span
+                          <span>
+                            <CircleCheck v-if="check.status === 'passed'" aria-hidden="true" />
+                            <CircleAlert v-else aria-hidden="true" />
+                          </span
                           ><strong>{{ check.label }}</strong
                           ><code>{{ check.command }}</code
                           ><small
@@ -4243,9 +4354,10 @@ onUnmounted(() => {
                       class="verification-attempt"
                     >
                       <h4>
-                        <span :class="attempt.status">{{
-                          attempt.status === "passed" ? "✓" : "!"
-                        }}</span>
+                        <span :class="attempt.status">
+                          <CircleCheck v-if="attempt.status === 'passed'" aria-hidden="true" />
+                          <CircleAlert v-else aria-hidden="true" />
+                        </span>
                         Post-change attempt {{ attempt.index }}
                         <small>{{
                           new Date(attempt.ts).toLocaleTimeString()
@@ -4258,9 +4370,10 @@ onUnmounted(() => {
                         :open="check.status !== 'passed'"
                       >
                         <summary>
-                          <span>{{
-                            check.status === "passed" ? "✓" : "!"
-                          }}</span
+                          <span>
+                            <CircleCheck v-if="check.status === 'passed'" aria-hidden="true" />
+                            <CircleAlert v-else aria-hidden="true" />
+                          </span
                           ><strong>{{ check.label }}</strong
                           ><code>{{ check.command }}</code
                           ><small
@@ -4276,10 +4389,11 @@ onUnmounted(() => {
                       v-if="!selectedAgentRun.verification.attempts.length"
                       class="checks-empty"
                     >
-                      <div
-                        class="spinner"
+                      <LoaderCircle
                         v-if="selectedAgentRun.status === 'verifying'"
-                      ></div>
+                        class="agent-loader"
+                        aria-hidden="true"
+                      />
                       <strong>{{
                         selectedAgentRun.status === "verifying"
                           ? "Running project checks…"
@@ -4297,8 +4411,8 @@ onUnmounted(() => {
                       class="agent-response-card"
                     >
                       <div class="agent-response-head">
-                        <span aria-hidden="true">✦</span
-                        ><strong>Response</strong
+                        <Sparkles aria-hidden="true" />
+                        <strong>Response</strong
                         ><time>{{
                           selectedAgentRun.finishedAt
                             ? new Date(
@@ -4382,8 +4496,8 @@ onUnmounted(() => {
                       class="activity-live"
                       aria-live="polite"
                     >
-                      <span class="spinner"></span
-                      ><span
+                      <LoaderCircle class="agent-loader" aria-hidden="true" />
+                      <span
                         ><strong>{{
                           selectedAgentRun.status === "verifying"
                             ? "Running checks"
@@ -4411,7 +4525,7 @@ onUnmounted(() => {
                     ]"
                   >
                     <div class="promotion-copy">
-                      <span class="promotion-icon" aria-hidden="true">!</span>
+                      <span class="promotion-icon" aria-hidden="true"><ShieldCheck /></span>
                       <div>
                         <strong>{{
                           selectedAgentRun.promotion.status ===
@@ -4453,7 +4567,7 @@ onUnmounted(() => {
                     v-else-if="selectedAgentRun.status === 'applied'"
                     class="promotion-complete"
                   >
-                    <strong>✓ Contract satisfied and patch promoted</strong
+                    <strong><CircleCheck aria-hidden="true" />Contract satisfied and patch promoted</strong
                     ><span
                       >Aperta is observing the real working tree and will
                       capture the change for proof and ownership.</span
@@ -4487,9 +4601,9 @@ onUnmounted(() => {
                       Fix failing checks
                     </button>
                   </footer>
-                </section>
-                <section v-else class="agent-review agent-welcome">
-                  <div class="agent-welcome-mark">✦</div>
+                  </section>
+                  <section v-else class="agent-review agent-welcome">
+                    <div class="agent-welcome-mark"><Sparkles aria-hidden="true" /></div>
                   <h3>Your agent workspace</h3>
                   <p>
                     Start with a task in the agent pane. Aperta will keep the
@@ -4544,10 +4658,10 @@ onUnmounted(() => {
                 v-if="agentPaneOpen"
                 class="agent-sidepane"
                 aria-label="Agent controls"
-              >
-                <header>
-                  <div>
-                    <span class="agent-orb">✦</span>
+                  >
+                    <header>
+                      <div>
+                        <span class="agent-orb"><Sparkles aria-hidden="true" /></span>
                     <div>
                       <strong>{{ agentRuntimeStatus ? agentRuntimeLabel(agentRuntimeStatus.kind) : 'Execution engine' }}</strong
                       ><small>{{ agentEngineSummary }}</small>
@@ -4567,10 +4681,10 @@ onUnmounted(() => {
                     <label for="agent-conversation-select">Conversation</label
                     ><button
                       class="agent-new-task"
-                      :disabled="agentRunning"
-                      @click="newAgentConversation"
-                    >
-                      ＋ New task
+                          :disabled="agentRunning"
+                          @click="newAgentConversation"
+                        >
+                          <Plus aria-hidden="true" />New task
                     </button>
                   </div>
                   <select
@@ -4640,10 +4754,10 @@ onUnmounted(() => {
                   <div v-else class="agent-side-empty">
                     Describe the outcome you want. Follow-ups will stay together
                     here.
-                  </div>
-                  <div v-if="agentRunning" class="agent-side-live">
-                    <span class="spinner"></span
-                    >{{
+                      </div>
+                      <div v-if="agentRunning" class="agent-side-live">
+                        <LoaderCircle class="agent-loader" aria-hidden="true" />
+                        {{
                       agentJob?.state === "queued"
                         ? "Preparing workspace…"
                         : "Inspecting and editing…"
@@ -4715,7 +4829,7 @@ onUnmounted(() => {
                     ><button
                       v-else
                       class="agent-send"
-                      :disabled="agentRunning || agentIntent.trim().length < 10"
+                      :disabled="agentRunning || agentIntent.trim().length < 10 || !state?.initialization.initialized"
                       @click="startAgentRun"
                     >
                       {{
@@ -4724,9 +4838,9 @@ onUnmounted(() => {
                           : selectedAgentConversation
                             ? "Send"
                             : "Start"
-                      }}
-                      <span>↗</span>
-                    </button>
+                          }}
+                          <ArrowUpRight aria-hidden="true" />
+                        </button>
                   </div>
                 </footer>
               </aside>
@@ -4735,10 +4849,10 @@ onUnmounted(() => {
                 class="agent-pane-rail"
                 @click="setAgentPaneOpen(true)"
                 aria-label="Open agent pane"
-                title="Open agent pane"
-              >
-                <span>✦</span><strong>Agent</strong>
-              </button>
+                    title="Open agent pane"
+                  >
+                    <Sparkles aria-hidden="true" /><strong>Agent</strong>
+                  </button>
             </div>
           </template>
 
@@ -5098,7 +5212,14 @@ onUnmounted(() => {
               Return to review queue
             </button>
           </div>
-          <div v-else-if="brief" class="review-body review-body-wide">
+          <div
+            v-else-if="brief"
+            class="review-body review-body-wide"
+            :style="{
+              '--ownership-left-width': `${ownershipLeftWidth}px`,
+              '--ownership-right-width': `${ownershipRightWidth}px`,
+            }"
+          >
             <aside class="change-navigator">
               <div class="change-summary">
                 <span
@@ -5187,6 +5308,22 @@ onUnmounted(() => {
                 </li>
               </ul>
             </aside>
+
+            <button
+              type="button"
+              class="ownership-resizer ownership-resizer-left"
+              role="separator"
+              aria-label="Resize change briefing panel"
+              aria-orientation="vertical"
+              :aria-valuemin="260"
+              :aria-valuemax="520"
+              :aria-valuenow="ownershipLeftWidth"
+              title="Drag to resize change briefing panel"
+              @pointerdown.prevent="beginOwnershipPanelResize('left', $event)"
+              @keydown.left.prevent="resizeOwnershipPanelBy('left', -20)"
+              @keydown.right.prevent="resizeOwnershipPanelBy('left', 20)"
+              @dblclick="setOwnershipPanelWidth('left', 360)"
+            ></button>
 
             <section class="evidence-pane diff-workspace">
               <div class="diff-toolbar">
@@ -5349,6 +5486,22 @@ onUnmounted(() => {
                 >
               </div>
             </section>
+
+            <button
+              type="button"
+              class="ownership-resizer ownership-resizer-right"
+              role="separator"
+              aria-label="Resize learning panel"
+              aria-orientation="vertical"
+              :aria-valuemin="340"
+              :aria-valuemax="620"
+              :aria-valuenow="ownershipRightWidth"
+              title="Drag to resize learning panel"
+              @pointerdown.prevent="beginOwnershipPanelResize('right', $event)"
+              @keydown.left.prevent="resizeOwnershipPanelBy('right', 20)"
+              @keydown.right.prevent="resizeOwnershipPanelBy('right', -20)"
+              @dblclick="setOwnershipPanelWidth('right', 460)"
+            ></button>
 
             <aside class="reflection-pane learning-inspector">
               <div class="starting-confidence">

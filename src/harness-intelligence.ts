@@ -74,9 +74,11 @@ export async function buildHarnessHealth(root: string): Promise<HarnessHealthRep
   const providerLatencies = runs.filter((run) => run.telemetry?.providerCalls).map((run) => run.telemetry.providerLatencyMs / run.telemetry.providerCalls);
   const totalToolCalls = tools.reduce((sum, tool) => sum + tool.calls, 0), totalToolErrors = tools.reduce((sum, tool) => sum + tool.errors, 0);
   const unknownErrors = errors.find((error) => error.class === "HarnessBug")?.count ?? 0;
+  const providerErrors = errors.find((error) => error.class === "ProviderError")?.count ?? 0;
   const stateConflicts = errors.find((error) => error.class === "StateConflict")?.count ?? 0;
   const signals: HarnessHealthReport["signals"] = [];
   if (unknownErrors) signals.push({ level: "critical", title: "Unknown harness errors detected", detail: `${unknownErrors} error${unknownErrors === 1 ? "" : "s"} could not be assigned to an expected failure class and should be treated as a harness defect.` });
+  if (providerErrors) signals.push({ level: "warning", title: "Agent runtime failures detected", detail: `${providerErrors} provider or external-agent failure${providerErrors === 1 ? "" : "s"} occurred. Inspect runtime availability and diagnostics; these are not harness defects.` });
   if (stateConflicts) signals.push({ level: "warning", title: "Conversation state conflicts", detail: `${stateConflicts} run${stateConflicts === 1 ? "" : "s"} encountered repository changes while carrying work across turns. New runs now carry prior patches forward when they still apply cleanly.` });
   const reliability = rate(totalToolCalls - totalToolErrors, totalToolCalls);
   if (reliability !== null && reliability < .99) signals.push({ level: "warning", title: "Tool reliability below target", detail: `${(reliability * 100).toFixed(1)}% successful across ${totalToolCalls} recorded tool actions; the initial target is 99%.` });
