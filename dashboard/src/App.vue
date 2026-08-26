@@ -2504,7 +2504,7 @@ onUnmounted(() => {
               <span class="item-label">Agent Reliability</span
               ><b
                 v-if="
-                  harnessHealth?.signals.some(
+                    harnessHealth?.signals?.some(
                     (signal) => signal.level !== 'healthy',
                   )
                 "
@@ -4887,7 +4887,7 @@ onUnmounted(() => {
                   <h3 id="agent-runtime-title">Choose what runs coding tasks.</h3>
                   <p>Your coding agent plans and edits. Aperta isolates the work, runs checks, and records evidence.</p>
                 </div>
-                <span class="runtime-active">ACTIVE · {{ modelSettings?.agentRuntime.kind ?? 'aperta' }}</span>
+                <span class="runtime-active">ACTIVE · {{ modelSettings?.agentRuntime?.kind ?? 'aperta' }}</span>
               </header>
               <div class="runtime-options">
                 <button
@@ -4900,7 +4900,7 @@ onUnmounted(() => {
                 >
                   <span class="runtime-mark">{{ agentRuntimeMark(runtime.kind) }}</span>
                   <span><strong>{{ agentRuntimeLabel(runtime.kind) }}</strong><small>{{ agentRuntimeSubtitle(runtime.kind) }}</small></span>
-                  <em :class="{ ready: runtime.available }">{{ runtime.available ? 'READY' : 'SETUP NEEDED' }}</em>
+                  <em :class="{ ready: runtime.available }">{{ runtime.available ? (runtime.kind === 'aperta' ? 'READY' : 'INSTALLED') : 'SETUP NEEDED' }}</em>
                   <p>{{ runtime.detail }}</p>
                 </button>
               </div>
@@ -4937,7 +4937,7 @@ onUnmounted(() => {
                 <p class="eyebrow">HOW APERTA USES MODELS</p>
                 <h3 id="intelligence-routing-title">Choose a model for each AI task</h3>
               </header>
-              <article :class="{ paused: modelSettings?.agentRuntime.kind !== 'aperta' }">
+              <article :class="{ paused: modelSettings?.agentRuntime?.kind !== 'aperta' }">
                 <span>1</span><div><strong>Builder</strong><p>{{ activeBuilderProfile?.name ?? 'Not configured' }} · {{ activeBuilderProfile?.model ?? 'Choose a model below' }}</p><small>{{ modelSettings?.agentRuntime.kind === 'aperta' ? 'Runs the Aperta Native coding loop.' : `On standby. ${agentRuntimeLabel(modelSettings?.agentRuntime.kind ?? 'aperta')} manages its own model.` }}</small></div>
               </article>
               <article>

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
 import { promisify } from "node:util";
-import { applyAgentRun, buildAgentTranscriptPrompt, externalRuntimeArgs, listAgentConversations, MAX_AGENT_INPUT_CHARS, normalizeExternalRuntimeEvent, runCursorAgent, runModelAgent, saveAgentUnderstanding } from "../src/agent-harness.ts";
+import { applyAgentRun, buildAgentTranscriptPrompt, externalRuntimeArgs, externalRuntimeFailureDiagnostic, listAgentConversations, MAX_AGENT_INPUT_CHARS, normalizeExternalRuntimeEvent, runCursorAgent, runModelAgent, saveAgentUnderstanding } from "../src/agent-harness.ts";
 
 const exec = promisify(execFile);
 
@@ -139,6 +139,14 @@ test("external runtime commands request structured output and keep verification 
   const opencode = externalRuntimeArgs({ kind: "opencode", model: "deepseek/deepseek-v4-pro", command: "opencode" }, "/tmp/work", "change it");
   assert.deepEqual(opencode.slice(0, 5), ["run", "--format", "json", "--pure", "--auto"]);
   assert.ok(opencode.includes("/tmp/work"));
+});
+
+test("external runtime failures preserve stdout-only provider diagnostics", () => {
+  const event = JSON.stringify({ type: "error", error: { data: { message: "Provided authentication token is expired.", statusCode: 401 } } });
+  const parsed = JSON.parse(event);
+  const summary = parsed.error.data.message;
+  assert.equal(externalRuntimeFailureDiagnostic("", summary, event), "Provided authentication token is expired.");
+  assert.match(externalRuntimeFailureDiagnostic("", "", "plain stdout failure"), /plain stdout failure/);
 });
 
 test("Claude stream events become readable, repository-relative activity", () => {

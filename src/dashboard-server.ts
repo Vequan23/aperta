@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import { createServer, type Server } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,15 +40,25 @@ function openBrowser(url: string): void {
 }
 
 export async function startDashboard(root: string, port: number, shouldOpen = true): Promise<void> {
+  await startDashboardServer(root, port, shouldOpen, true);
+}
+
+export async function startDashboardApi(root: string, port: number): Promise<Server> {
+  return startDashboardServer(root, port, false, false);
+}
+
+async function startDashboardServer(root: string, port: number, shouldOpen: boolean, serveAssets: boolean): Promise<Server> {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   const adjacentDist = join(moduleDir, "../dashboard/dist");
   let dist = adjacentDist;
-  try { await stat(join(adjacentDist, "index.html")); }
-  catch { dist = join(moduleDir, "../../dashboard/dist"); }
-  try {
-    await stat(join(dist, "index.html"));
-  } catch {
-    throw new Error("Dashboard assets are missing. Run `npm run build` in the Aperta project first.");
+  if (serveAssets) {
+    try { await stat(join(adjacentDist, "index.html")); }
+    catch { dist = join(moduleDir, "../../dashboard/dist"); }
+    try {
+      await stat(join(dist, "index.html"));
+    } catch {
+      throw new Error("Dashboard assets are missing. Run `npm run build` in the Aperta project first.");
+    }
   }
 
   await registerProject(root);
@@ -317,6 +327,11 @@ export async function startDashboard(root: string, port: number, shouldOpen = tr
         response.end(JSON.stringify(payload));
         return;
       }
+      if (!serveAssets) {
+        response.writeHead(404, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ error: "API route not found" }));
+        return;
+      }
       const requested = url.pathname === "/" ? "index.html" : decodeURIComponent(url.pathname.slice(1));
       const safePath = normalize(requested).replace(/^(\.\.[/\\])+/, "");
       let file = join(dist, safePath);
@@ -342,9 +357,12 @@ export async function startDashboard(root: string, port: number, shouldOpen = tr
     server.once("error", reject);
     server.listen(port, "127.0.0.1", resolve);
   });
-  const url = `http://127.0.0.1:${port}`;
-  console.log(`Aperta dashboard: ${url}`);
-  console.log("Press Ctrl+C to stop.");
-  if (shouldOpen) openBrowser(url);
+  if (serveAssets) {
+    const url = `http://127.0.0.1:${port}`;
+    console.log(`Aperta dashboard: ${url}`);
+    console.log("Press Ctrl+C to stop.");
+    if (shouldOpen) openBrowser(url);
+  }
   server.on("close", () => { for (const observer of observers.values()) observer.stop(); });
+  return server;
 }

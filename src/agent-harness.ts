@@ -823,6 +823,11 @@ export function externalRuntimeArgs(runtime: AgentRuntimeConfig, workspace: stri
   return args;
 }
 
+export function externalRuntimeFailureDiagnostic(stderr: string, summary: string, stdout: string): string {
+  const diagnostic = cleanExecutionOutput(stderr.trim() || summary.trim() || stdout.trim()).slice(-4_000);
+  return diagnostic || "no diagnostic output";
+}
+
 async function executeExternalTurn(root: string, workspace: string, run: AgentRun, runtime: AgentRuntimeConfig, prompt: string, signal?: AbortSignal): Promise<string> {
   const args = externalRuntimeArgs(runtime, workspace, prompt, run.skill);
   const started = Date.now();
@@ -832,7 +837,7 @@ async function executeExternalTurn(root: string, workspace: string, run: AgentRu
   if (runtime.kind === "claude" && process.env.CLAUDE_CODE_OAUTH_TOKEN) externalEnvironment.CLAUDE_CODE_OAUTH_TOKEN = process.env.CLAUDE_CODE_OAUTH_TOKEN;
   if (runtime.kind === "opencode") externalEnvironment.OPENCODE_CONFIG_CONTENT = JSON.stringify({ permission: { "*": "deny", read: "allow", edit: run.skill.allowedTools.includes("repository.write") ? "allow" : "deny", glob: "allow", grep: "allow", list: "allow", lsp: "allow", bash: "deny", webfetch: "deny", task: "deny", skill: "deny", external_directory: "deny" } });
   const child = spawn(runtime.command, args, { cwd: workspace, stdio: ["ignore", "pipe", "pipe"], env: externalEnvironment });
-  let stderr = "", summary = "", timedOut = false;
+  let stderr = "", stdout = "", summary = "", timedOut = false;
   child.stderr?.on("data", (chunk) => { stderr = `${stderr}${String(chunk)}`.slice(-24_000); });
   const abort = () => child.kill("SIGTERM"); signal?.addEventListener("abort", abort, { once: true });
   const timeout = setTimeout(() => { timedOut = true; child.kill("SIGTERM"); }, 15 * 60_000);
@@ -845,6 +850,7 @@ async function executeExternalTurn(root: string, workspace: string, run: AgentRu
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
     for await (const line of lines) {
       if (!line.trim()) continue;
+      stdout = `${stdout}${line}\n`.slice(-24_000);
       let event: Record<string, unknown>;
       try { event = JSON.parse(line) as Record<string, unknown>; }
       catch { continue; }
@@ -861,7 +867,7 @@ async function executeExternalTurn(root: string, workspace: string, run: AgentRu
     if (signal?.aborted) throw new DOMException("Canceled", "AbortError");
     const label = runtime.kind === "cursor" ? "Cursor" : runtime.kind === "claude" ? "Claude Code" : "OpenCode";
     if (timedOut) throw new Error(`${label} exceeded Aperta's 15-minute turn limit`);
-    if (code !== 0) throw new Error(`${label} exited with code ${code}: ${cleanExecutionOutput(stderr).slice(-4_000) || "no diagnostic output"}`);
+    if (code !== 0) throw new Error(`${label} exited with code ${code}: ${externalRuntimeFailureDiagnostic(stderr, summary, stdout)}`);
     return summary;
   } finally {
     clearTimeout(timeout); signal?.removeEventListener("abort", abort);

@@ -36,6 +36,14 @@ type SkillDefinition = Omit<AgentSkillContract, "reason"> & { score(intent: stri
 
 const readTools: AgentToolId[] = ["repository.list", "repository.read", "repository.search"];
 const changeTools: AgentToolId[] = [...readTools, "repository.write", "checks.run", "service.start", "http.local"];
+const mutationPattern = /\b(?:add|build|create|change|edit|implement|update|remove|replace|refactor|make|fix|increase|decrease|enable|disable|toggle|rename|move)\b/i;
+
+function requestsMutation(intent: string): boolean {
+  const withoutNegatedMutation = intent
+    .replace(/\b(?:do\s+not|don't|dont|never)\s+(?:add|build|create|change|edit|implement|update|remove|replace|refactor|make|fix|increase|decrease|enable|disable|toggle|rename|move|modify)\b/gi, "")
+    .replace(/\bwithout\s+(?:adding|building|creating|changing|editing|implementing|updating|removing|replacing|refactoring|making|fixing|increasing|decreasing|enabling|disabling|toggling|renaming|moving|modifying)\b/gi, "");
+  return mutationPattern.test(withoutNegatedMutation);
+}
 
 const definitions: SkillDefinition[] = [
   {
@@ -89,7 +97,7 @@ const definitions: SkillDefinition[] = [
       { id: "project-checks", text: "Relevant detected project checks pass after the change.", method: "checks" },
     ],
     learningObjectives: ["Trace the changed behavior through its primary execution path.", "Explain why the implementation works and where it could fail.", "Describe one safe follow-up modification and its verification check."],
-    score: (intent) => /\b(?:add|build|create|change|edit|implement|update|remove|replace|refactor|make|fix|increase|decrease|enable|disable|toggle|rename|move)\b/i.test(intent) ? 70 : 0,
+    score: (intent) => requestsMutation(intent) ? 70 : 0,
   },
   {
     id: "explain-code", version: 1, label: "Explain repository behavior", description: "Ground an explanation in repository evidence without changing files.", mode: "analyze", allowedTools: readTools,

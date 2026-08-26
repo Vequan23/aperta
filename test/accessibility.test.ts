@@ -41,14 +41,17 @@ test("uninitialized projects receive an explicit setup state and action", async 
   const root = join(import.meta.dirname, "..");
   const app = await readFile(join(root, "dashboard/src/App.vue"), "utf8");
   const vite = await readFile(join(root, "dashboard/vite.config.ts"), "utf8");
+  const server = await readFile(join(root, "src/dashboard-server.ts"), "utf8");
   assert.match(app, /Set up Aperta for \{\{ state\.repo \}\}/);
   assert.match(app, /You can browse the repository now/);
   assert.match(app, /@click="initializeProject"/);
   assert.match(app, /!state\?\.initialization\.initialized/);
-  assert.match(vite, /inspectProjectInitialization\(project\.root\)/);
-  assert.match(vite, /\.\.\.dashboard,[\s\S]{0,80}initialization,[\s\S]{0,80}projectId: project\.id/);
-  assert.match(vite, /url\.pathname === "\/file"/);
-  assert.match(vite, /readRepositoryFile\(project\.root/);
+  assert.match(vite, /startDashboardApi\(process\.cwd\(\), apiPort\)/);
+  assert.match(vite, /"\/api"[\s\S]{0,80}127\.0\.0\.1/);
+  assert.match(server, /inspectProjectInitialization\(project\.root\)/);
+  assert.match(server, /\.\.\.dashboard,[\s\S]{0,100}initialization,[\s\S]{0,100}projectId: project\.id/);
+  assert.match(server, /url\.pathname === "\/api\/file"/);
+  assert.match(server, /readRepositoryFile\(project\.root/);
 });
 
 test("ownership side panels expose adjustable keyboard-accessible separators", async () => {

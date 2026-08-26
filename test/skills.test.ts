@@ -8,6 +8,8 @@ test("skill selection is deterministic and prioritizes the requested outcome", (
   assert.equal(selectAgentSkill("Fix the failing compiler checks.").id, "debug-failing-behavior");
   assert.equal(selectAgentSkill("Add a health endpoint.").id, "implement-proven-change");
   assert.equal(selectAgentSkill("Is Redis running on the configured port?").id, "observe-runtime");
+  assert.equal(selectAgentSkill("What is the package name? Do not edit files.").id, "explain-code");
+  assert.equal(selectAgentSkill("Explain the package without modifying code.").id, "explain-code");
 });
 
 test("read-only skills reject mutation while change skills permit it", () => {
