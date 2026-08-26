@@ -1051,17 +1051,17 @@ function band(score: number | null) {
 }
 
 function scoreText(score: number | null) {
-  return score === null ? "—" : score.toFixed(1);
+  return score === null ? "n/a" : score.toFixed(1);
 }
 function percent(value: number) {
   return `${Math.round(value * 100)}%`;
 }
 function metricPercent(value: number | null) {
-  return value === null ? "—" : `${Math.round(value * 100)}%`;
+  return value === null ? "n/a" : `${Math.round(value * 100)}%`;
 }
 function metricDuration(value: number | null) {
   return value === null
-    ? "—"
+    ? "n/a"
     : value < 1000
       ? `${Math.round(value)}ms`
       : `${(value / 1000).toFixed(1)}s`;
@@ -1190,7 +1190,7 @@ function journalSummary(session: Session) {
     (item) => item.answer.trim().length,
   )?.answer;
   if (answer) return answer;
-  return `Ownership session completed with confidence ${session.score ?? "unrated"}. No written explanation was recorded.`;
+  return `Ownership review completed with a score of ${session.score ?? "unrated"}. No written explanation was recorded.`;
 }
 async function selectFile(path: string) {
   selectedPath.value = path;
@@ -1466,7 +1466,7 @@ async function loadImpact(
       { cache: "no-store" },
     );
     if (!response.ok)
-      throw new Error("Could not build the behavioral impact graph");
+      throw new Error("Could not map the impact of this change");
     const body = await response.json();
     impact.value = body.graph;
     selectedImpactNodeId.value = body.graph.nodes[0]?.id ?? "";
@@ -1781,7 +1781,7 @@ async function loadHarnessHealth() {
     );
     const body = await response.json().catch(() => ({}));
     if (!response.ok)
-      throw new Error(body.error ?? "Could not load harness health");
+      throw new Error(body.error ?? "Could not load agent reliability");
     harnessHealth.value = body;
   } catch (reason) {
     harnessError.value =
@@ -2232,14 +2232,14 @@ onUnmounted(() => {
 
 <template>
   <main class="desktop" :class="`theme-${theme}`">
-    <section class="window" aria-label="Aperta comprehension dashboard">
+    <section class="window" aria-label="Aperta code ownership dashboard">
       <header class="titlebar">
         <div class="traffic" aria-hidden="true">
           <i class="close"></i><i class="minimize"></i><i class="zoom"></i>
         </div>
         <div class="window-title">
           <span class="aperta-mark">a</span><strong>aperta</strong
-          ><span>Comprehension</span>
+          ><span>Code ownership</span>
         </div>
         <button
           class="refresh-button"
@@ -2274,9 +2274,9 @@ onUnmounted(() => {
               :value="project.id"
               :disabled="!project.available"
             >
-              {{ project.name }}{{ project.available ? "" : " — unavailable" }}
+              {{ project.name }}{{ project.available ? "" : " (unavailable)" }}
             </option></select
-          ><span>/</span><strong>{{ state?.branch ?? "—" }}</strong></label
+          ><span>/</span><strong>{{ state?.branch ?? "No branch" }}</strong></label
         >
         <div class="theme-switch" aria-label="Appearance">
           <button
@@ -2303,7 +2303,7 @@ onUnmounted(() => {
       <div v-if="error" class="error-panel">{{ error }}</div>
       <div v-else-if="!state" class="loading-panel">
         <div class="spinner"></div>
-        Reading the comprehension ledger…
+        Reading project evidence…
       </div>
 
       <section
@@ -2314,13 +2314,13 @@ onUnmounted(() => {
       >
         <CircleAlert aria-hidden="true" />
         <div>
-          <strong>Aperta isn’t initialized for {{ state.repo }}</strong>
-          <span>Repository and Git browsing are available. Agent runs, capture history, reviews, and learning memory stay off until you initialize this project.</span>
+          <strong>Set up Aperta for {{ state.repo }}</strong>
+          <span>You can browse the repository now. Set up the project to run agents, capture changes, review code, and save what you learn.</span>
           <code>aperta init</code>
           <small v-if="initializationError">{{ initializationError }}</small>
         </div>
         <button type="button" :disabled="initializingProject" @click="initializeProject">
-          {{ initializingProject ? "Initializing…" : "Initialize Aperta" }}
+          {{ initializingProject ? "Setting up…" : "Set up Aperta" }}
         </button>
       </section>
 
@@ -2349,22 +2349,22 @@ onUnmounted(() => {
             </button>
           </header>
           <nav class="sidebar-nav">
-            <p class="source-label">BUILD</p>
+            <p class="source-label">WORK</p>
             <button
               :class="[
                 'source-item primary-action',
                 { selected: view === 'agents' },
               ]"
               :aria-current="view === 'agents' ? 'page' : undefined"
-              title="Agent Workbench"
-              @mouseenter="showNavTooltip($event, 'Agent Workbench')"
-              @focus="showNavTooltip($event, 'Agent Workbench')"
+              title="Agent Work"
+              @mouseenter="showNavTooltip($event, 'Agent Work')"
+              @focus="showNavTooltip($event, 'Agent Work')"
               @mouseleave="hideNavTooltip"
               @blur="hideNavTooltip"
               @click="showAgents"
             >
               <Sparkles class="nav-icon" aria-hidden="true" />
-              <span class="item-label">Agent Workbench</span
+              <span class="item-label">Agent Work</span
               ><b
                 v-if="agentRuns.filter((run) => run.status === 'ready').length"
                 >{{
@@ -2388,7 +2388,7 @@ onUnmounted(() => {
               ><b v-if="gitStatus">{{ gitStatus.staged.length + gitStatus.unstaged.length + gitStatus.untracked.length }}</b>
             </button>
 
-            <p class="source-label secondary">UNDERSTAND</p>
+            <p class="source-label secondary">REVIEW</p>
             <button
               :class="['source-item', { selected: view === 'map' }]"
               :aria-current="view === 'map' ? 'page' : undefined"
@@ -2406,15 +2406,15 @@ onUnmounted(() => {
             <button
               :class="['source-item', { selected: view === 'queue' }]"
               :aria-current="view === 'queue' ? 'page' : undefined"
-              title="Review Queue"
-              @mouseenter="showNavTooltip($event, 'Review Queue')"
-              @focus="showNavTooltip($event, 'Review Queue')"
+              title="Changes to Review"
+              @mouseenter="showNavTooltip($event, 'Changes to Review')"
+              @focus="showNavTooltip($event, 'Changes to Review')"
               @mouseleave="hideNavTooltip"
               @blur="hideNavTooltip"
               @click="view = 'queue'"
             >
               <ListChecks class="nav-icon" aria-hidden="true" />
-              <span class="item-label">Review Queue</span
+              <span class="item-label">Changes to Review</span
               ><b v-if="state.summary.reviewCount" class="alert-count">{{
                 state.summary.reviewCount
               }}</b>
@@ -2422,33 +2422,33 @@ onUnmounted(() => {
             <button
               :class="['source-item', { selected: view === 'learn' }]"
               :aria-current="view === 'learn' ? 'page' : undefined"
-              title="Learn Next"
-              @mouseenter="showNavTooltip($event, 'Learn Next')"
-              @focus="showNavTooltip($event, 'Learn Next')"
+              title="Review Again"
+              @mouseenter="showNavTooltip($event, 'Review Again')"
+              @focus="showNavTooltip($event, 'Review Again')"
               @mouseleave="hideNavTooltip"
               @blur="hideNavTooltip"
               @click="view = 'learn'"
             >
               <RefreshCw class="nav-icon" aria-hidden="true" />
-              <span class="item-label">Learn Next</span
+              <span class="item-label">Review Again</span
               ><b v-if="state.summary.learnCount" class="attention-count">{{
                 state.summary.learnCount
               }}</b>
             </button>
 
-            <p class="source-label secondary">INSIGHTS</p>
+            <p class="source-label secondary">EVIDENCE</p>
             <button
               :class="['source-item', { selected: view === 'impact' }]"
               :aria-current="view === 'impact' ? 'page' : undefined"
-              title="Impact Graph"
-              @mouseenter="showNavTooltip($event, 'Impact Graph')"
-              @focus="showNavTooltip($event, 'Impact Graph')"
+              title="Change Impact"
+              @mouseenter="showNavTooltip($event, 'Change Impact')"
+              @focus="showNavTooltip($event, 'Change Impact')"
               @mouseleave="hideNavTooltip"
               @blur="hideNavTooltip"
               @click="showImpact"
             >
               <GitFork class="nav-icon" aria-hidden="true" />
-              <span class="item-label">Impact Graph</span>
+              <span class="item-label">Change Impact</span>
             </button>
             <button
               :class="['source-item', { selected: view === 'proofgraph' }]"
@@ -2467,41 +2467,41 @@ onUnmounted(() => {
             <button
               :class="['source-item', { selected: view === 'journal' }]"
               :aria-current="view === 'journal' ? 'page' : undefined"
-              title="Learning Journal"
-              @mouseenter="showNavTooltip($event, 'Learning Journal')"
-              @focus="showNavTooltip($event, 'Learning Journal')"
+              title="Review Notes"
+              @mouseenter="showNavTooltip($event, 'Review Notes')"
+              @focus="showNavTooltip($event, 'Review Notes')"
               @mouseleave="hideNavTooltip"
               @blur="hideNavTooltip"
               @click="view = 'journal'"
             >
               <NotebookPen class="nav-icon" aria-hidden="true" />
-              <span class="item-label">Learning Journal</span>
+              <span class="item-label">Review Notes</span>
             </button>
             <button
               :class="['source-item', { selected: view === 'activity' }]"
               :aria-current="view === 'activity' ? 'page' : undefined"
-              title="Capture Activity"
-              @mouseenter="showNavTooltip($event, 'Capture Activity')"
-              @focus="showNavTooltip($event, 'Capture Activity')"
+              title="Change History"
+              @mouseenter="showNavTooltip($event, 'Change History')"
+              @focus="showNavTooltip($event, 'Change History')"
               @mouseleave="hideNavTooltip"
               @blur="hideNavTooltip"
               @click="view = 'activity'"
             >
               <Activity class="nav-icon" aria-hidden="true" />
-              <span class="item-label">Capture Activity</span>
+              <span class="item-label">Change History</span>
             </button>
             <button
               :class="['source-item', { selected: view === 'harness' }]"
               :aria-current="view === 'harness' ? 'page' : undefined"
-              title="Harness Health"
-              @mouseenter="showNavTooltip($event, 'Harness Health')"
-              @focus="showNavTooltip($event, 'Harness Health')"
+              title="Agent Reliability"
+              @mouseenter="showNavTooltip($event, 'Agent Reliability')"
+              @focus="showNavTooltip($event, 'Agent Reliability')"
               @mouseleave="hideNavTooltip"
               @blur="hideNavTooltip"
               @click="showHarnessHealth"
             >
               <Gauge class="nav-icon" aria-hidden="true" />
-              <span class="item-label">Harness Health</span
+              <span class="item-label">Agent Reliability</span
               ><b
                 v-if="
                   harnessHealth?.signals.some(
@@ -2570,17 +2570,17 @@ onUnmounted(() => {
           <template v-if="view === 'map'">
             <div class="section-head">
               <div>
-                <h2>Repository Comprehension Explorer</h2>
+                <h2>Explore your code</h2>
                 <p>
-                  Navigate the real repository. Changed files carry ownership
-                  and provenance signals.
+                  Browse the repository. Changed files show their source and
+                  review status.
                 </p>
               </div>
               <div class="legend">
-                <span><i class="danger"></i>Opaque</span
-                ><span><i class="warning"></i>Followable</span
+                <span><i class="danger"></i>Needs review</span
+                ><span><i class="warning"></i>Can trace</span
                 ><span><i class="good"></i>Owned</span
-                ><span><i class="unknown"></i>Unassessed</span>
+                ><span><i class="unknown"></i>Not reviewed</span>
               </div>
             </div>
             <div
@@ -2636,7 +2636,7 @@ onUnmounted(() => {
                   </div>
                   <dl class="file-context-facts">
                     <div class="primary-fact">
-                      <dt>Comprehension</dt>
+                      <dt>Ownership</dt>
                       <dd>
                         <span
                           :class="[
@@ -2648,7 +2648,7 @@ onUnmounted(() => {
                       </dd>
                     </div>
                     <div>
-                      <dt>Confidence</dt>
+                      <dt>Review score</dt>
                       <dd>
                         {{ scoreText(selectedFile.score) }} <small>of 3</small>
                       </dd>
@@ -2658,7 +2658,7 @@ onUnmounted(() => {
                       <dd>{{ percent(selectedFile.aiRatio) }}</dd>
                     </div>
                     <div>
-                      <dt>Captured churn</dt>
+                      <dt>Changed lines</dt>
                       <dd>
                         {{ selectedFile.totalLines }} <small>lines</small>
                       </dd>
@@ -2723,7 +2723,7 @@ onUnmounted(() => {
                   </footer>
                 </div>
                 <div v-else class="source-message">
-                  Choose a file to inspect its source and comprehension history.
+                  Choose a file to read its source and review history.
                 </div>
               </section>
             </div>
@@ -2732,10 +2732,10 @@ onUnmounted(() => {
           <template v-else-if="view === 'queue'">
             <div class="section-head">
               <div>
-                <h2>Review Queue</h2>
+                <h2>Changes to review</h2>
                 <p>
-                  Latest changes first. Repeated captures of the same files are
-                  consolidated so you review the current state once.
+                  Review the latest version of each changed file. Aperta groups
+                  overlapping captures for you.
                 </p>
               </div>
               <span class="count-badge">{{ state.queue.length }} waiting</span>
@@ -2773,7 +2773,7 @@ onUnmounted(() => {
                     capture{{ item.supersededCount === 1 ? "" : "s" }}.
                   </small>
                   <small v-if="item.skippedAt" class="queue-skipped">
-                    Skipped for now · returns after active reviews
+                    Skipped for now · returns after current reviews
                   </small>
                 </div>
                 <div class="queue-actions">
@@ -2784,7 +2784,7 @@ onUnmounted(() => {
                     {{
                       item.kind === "pending"
                         ? "Waiting for quiet…"
-                        : "Start ownership session"
+                        : "Review change"
                     }}
                   </button>
                   <button
@@ -2798,10 +2798,10 @@ onUnmounted(() => {
                 </div>
               </article>
               <div v-if="!state.queue.length" class="empty-state">
-                <strong>Everything is owned.</strong
+                <strong>Nothing needs review.</strong
                 ><span
-                  >New staged or unstaged changes from any coding tool will
-                  appear here automatically.</span
+                  >New staged or unstaged changes will appear here
+                  automatically.</span
                 >
               </div>
             </div>
@@ -2810,10 +2810,10 @@ onUnmounted(() => {
           <template v-else-if="view === 'learn'">
             <div class="section-head">
               <div>
-                <h2>Learn Next</h2>
+                <h2>Review again</h2>
                 <p>
-                  Understanding is revisited after time passes—or immediately
-                  when owned code changes again.
+                  Revisit what you learned after time passes or when the code
+                  changes again.
                 </p>
               </div>
               <span class="count-badge"
@@ -2848,23 +2848,23 @@ onUnmounted(() => {
                   <small
                     >{{
                       item.stale
-                        ? "Understanding invalidated by a later change"
+                        ? "A later change made this review stale"
                         : item.due
-                          ? "Ready for retrieval practice now"
+                          ? "Ready to review again"
                           : `Scheduled ${new Date(item.dueAt).toLocaleDateString()}`
                     }}
                     · last confidence {{ item.score ?? "unrated" }}/3</small
                   >
                 </div>
                 <button :disabled="!item.due" @click="openDiff(item.diffId)">
-                  {{ item.due ? "Revisit understanding" : "Not due yet" }}
+                  {{ item.due ? "Review again" : "Not due yet" }}
                 </button>
               </article>
               <div v-if="!state.learnNext.length" class="empty-state">
-                <strong>Complete an ownership session first.</strong
+                <strong>Complete your first review.</strong
                 ><span
-                  >Aperta will schedule the right moment to retrieve that
-                  knowledge again.</span
+                  >Aperta will bring it back when it is time to check what you
+                  remember.</span
                 >
               </div>
             </div>
@@ -2873,10 +2873,10 @@ onUnmounted(() => {
           <template v-else-if="view === 'impact'">
             <div class="section-head impact-head">
               <div>
-                <h2>Behavioral Impact Graph</h2>
+                <h2>What this change affects</h2>
                 <p>
-                  Trace the change from code surface to dependency, test
-                  evidence, and unresolved risk.
+                  Follow the change through related code, tests, and missing
+                  evidence.
                 </p>
               </div>
               <label
@@ -2903,7 +2903,7 @@ onUnmounted(() => {
             </div>
             <div v-if="impactLoading" class="impact-loading">
               <LoaderCircle class="impact-spinner" aria-hidden="true" />
-              Tracing repository relationships…
+              Finding related code and tests…
             </div>
             <div v-else-if="impact" class="impact-shell">
               <header class="impact-story">
@@ -2913,7 +2913,7 @@ onUnmounted(() => {
                   <p>{{ impact.narrative }}</p>
                 </div>
                 <span :class="['risk-chip', impact.risk]"
-                  >{{ impact.risk }} blast radius</span
+                  >{{ impact.risk }} impact</span
                 >
               </header>
               <section
@@ -2922,8 +2922,8 @@ onUnmounted(() => {
               >
                 <header>
                   <div>
-                    <p class="eyebrow">TRUST KERNEL</p>
-                    <h3>Know what Aperta knows—and how.</h3>
+                    <p class="eyebrow">EVIDENCE QUALITY</p>
+                    <h3>See what Aperta found and how certain it is.</h3>
                   </div>
                   <span>{{
                     impact.languages.join(" + ") || "Language unknown"
@@ -2976,7 +2976,7 @@ onUnmounted(() => {
                         ? "Executed evidence supports this change."
                         : proof.latest?.status === "regressed"
                           ? "The relevant evidence is failing."
-                          : "Turn structural inference into executed evidence."
+                          : "Run a check to replace an inference with evidence."
                     }}
                   </h3>
                   <p>
@@ -3045,11 +3045,11 @@ onUnmounted(() => {
               <section v-if="probeLab?.probes.length" class="probe-lab">
                 <header>
                   <div>
-                    <p class="eyebrow">PROBE LAB</p>
-                    <h3>Resolve what the existing suite cannot prove.</h3>
+                    <p class="eyebrow">MISSING PROOF</p>
+                    <h3>Test what your current suite does not cover.</h3>
                     <p>
-                      Generated tests run in a disposable copy. Your repository
-                      remains untouched.
+                      Aperta runs generated tests in a disposable copy. It does
+                      not change your repository.
                     </p>
                   </div>
                   <span
@@ -3235,7 +3235,7 @@ onUnmounted(() => {
                     <span><GitFork aria-hidden="true" /></span>
                     <div>
                       <strong>Dependencies & callers</strong
-                      ><small>Repository blast radius</small>
+                      ><small>Related code</small>
                     </div>
                   </header>
                   <button
@@ -3342,7 +3342,7 @@ onUnmounted(() => {
                 </section>
               </aside>
               <div v-if="impact.staleNotes.length" class="stale-notes">
-                <strong>Prior understanding may be stale</strong>
+                  <strong>Your earlier review may be stale</strong>
                 <p>
                   {{ impact.staleNotes.length }} saved explanation{{
                     impact.staleNotes.length === 1 ? "" : "s"
@@ -3351,14 +3351,13 @@ onUnmounted(() => {
                 </p>
               </div>
               <button class="impact-review" @click="openDiff(impactDiffId)">
-                Turn this graph into an ownership session <ArrowRight aria-hidden="true" />
+                Review this change <ArrowRight aria-hidden="true" />
               </button>
             </div>
             <div v-else class="empty-state">
               <strong>No captured change to trace.</strong
               ><span
-                >Make a code change and Aperta will build its behavioral
-                graph.</span
+                >Make a code change and Aperta will map what it affects.</span
               >
             </div>
           </template>
@@ -3366,9 +3365,9 @@ onUnmounted(() => {
           <template v-else-if="view === 'proofgraph'">
             <div class="section-head proof-graph-head">
               <div>
-                <p class="eyebrow">REPOSITORY MEMORY</p>
-                <h2>Behavioral Proof Graph</h2>
-                <p>What changed, what proves it, who understands it, and which evidence became stale.</p>
+                <p class="eyebrow">PROJECT EVIDENCE</p>
+                <h2>Proof Graph</h2>
+                <p>See what changed, what proves it, who reviewed it, and which evidence is stale.</p>
               </div>
               <button :disabled="repositoryProofLoading" @click="loadRepositoryProofGraph">
                 <RefreshCw class="button-icon" aria-hidden="true" />
@@ -3378,13 +3377,13 @@ onUnmounted(() => {
             <div v-if="repositoryProofError" class="settings-error">{{ repositoryProofError }}</div>
             <div v-else-if="repositoryProofLoading && !repositoryProofGraph" class="loading-panel">
               <div class="spinner"></div>
-              Connecting durable repository evidence…
+              Connecting project evidence…
             </div>
             <div v-else-if="repositoryProofGraph" class="repository-proof-graph">
               <section class="proof-graph-summary" aria-label="Repository proof coverage">
                 <article><strong>{{ repositoryProofGraph.summary.claims }}</strong><span>behavior claims</span></article>
                 <article class="proven"><strong>{{ repositoryProofGraph.summary.proven }}</strong><span>executable proof</span></article>
-                <article class="understood"><strong>{{ repositoryProofGraph.summary.understood }}</strong><span>human understood</span></article>
+                <article class="understood"><strong>{{ repositoryProofGraph.summary.understood }}</strong><span>reviewed by you</span></article>
                 <article class="stale"><strong>{{ repositoryProofGraph.summary.stale }}</strong><span>stale evidence</span></article>
                 <article><strong>{{ repositoryProofGraph.summary.coveredFiles }}</strong><span>connected files</span></article>
               </section>
@@ -3416,21 +3415,21 @@ onUnmounted(() => {
                   <footer><span>{{ compactDate(claim.ts) }}</span><span v-if="claim.assuranceAt">Last assured {{ compactDate(claim.assuranceAt) }}</span></footer>
                 </article>
               </section>
-              <div v-else class="empty-state"><strong>No claims match this filter.</strong><span>Run an agent task, execute proof, or complete an ownership session to grow repository memory.</span></div>
+              <div v-else class="empty-state"><strong>No claims match this filter.</strong><span>Run an agent task, run a check, or review a change to add project evidence.</span></div>
             </div>
           </template>
 
           <template v-else-if="view === 'journal'">
             <div class="section-head journal-head">
               <div>
-                <h2>Learning Journal</h2>
-                <p>Your explanations are durable, searchable project memory.</p>
+                <h2>Review notes</h2>
+                <p>Search the explanations you saved while reviewing code.</p>
               </div>
               <input
                 v-model="journalSearch"
                 type="search"
                 placeholder="Search notes, files, or tools…"
-                aria-label="Search learning journal"
+                aria-label="Search review notes"
               />
             </div>
             <div class="journal-list">
@@ -3454,7 +3453,7 @@ onUnmounted(() => {
                     session.demonstrated ? "Demonstrated" : "Reviewed"
                   }}</em
                   ><b :class="band(session.score).tone"
-                    >{{ session.score ?? "—" }}/3</b
+                    >{{ session.score ?? "n/a" }}/3</b
                   >
                 </div>
                 <blockquote>{{ journalSummary(session) }}</blockquote>
@@ -3483,8 +3482,8 @@ onUnmounted(() => {
                     : "Your journal starts after the first review."
                 }}</strong
                 ><span
-                  >Every completed ownership session remains available here—even
-                  without a written note.</span
+                  >Every completed review stays here, even when you did not add
+                  a note.</span
                 >
               </div>
             </div>
@@ -3523,10 +3522,10 @@ onUnmounted(() => {
           <template v-else-if="view === 'activity'">
             <div class="section-head">
               <div>
-                <h2>Capture Activity</h2>
+                <h2>Change history</h2>
                 <p>
-                  Every observer decision is visible—what happened, on which
-                  branch, and why.
+                  See what Aperta captured, when it happened, and which branch
+                  changed.
                 </p>
               </div>
               <span :class="['engine-badge', state.observer?.mode]">{{
@@ -3572,7 +3571,7 @@ onUnmounted(() => {
                 </button>
               </article>
               <div v-if="!state.observerActivity.length" class="empty-state">
-                <strong>No observer activity yet.</strong
+                <strong>No changes captured yet.</strong
                 ><span
                   >Activity will appear when the engine starts or the repository
                   changes.</span
@@ -3584,11 +3583,11 @@ onUnmounted(() => {
           <template v-else-if="view === 'harness'">
             <div class="section-head harness-head">
               <div>
-                <p class="eyebrow">HARNESS INTELLIGENCE</p>
-                <h2>Reliability you can improve, not merely observe.</h2>
+                <p class="eyebrow">AGENT RELIABILITY</p>
+                <h2>See where agent runs succeed or fail.</h2>
                 <p>
-                  Aperta measures the model and harness together while keeping
-                  raw prompts and evidence in private user storage outside Git.
+                  Compare models, tools, checks, and repairs using local run
+                  results. Prompts and evidence stay outside Git.
                 </p>
               </div>
               <button :disabled="harnessLoading" @click="loadHarnessHealth">
@@ -3604,12 +3603,12 @@ onUnmounted(() => {
               class="loading-panel"
             >
               <div class="spinner"></div>
-              Building the local harness baseline…
+              Building the local reliability baseline…
             </div>
             <div v-else-if="harnessHealth" class="harness-health">
               <section
                 class="harness-signals"
-                aria-label="Harness regression signals"
+                aria-label="Agent regression signals"
               >
                 <article
                   v-for="signal in harnessHealth.signals"
@@ -3628,7 +3627,7 @@ onUnmounted(() => {
                   </div>
                 </article>
               </section>
-              <section class="harness-metrics" aria-label="Harness metrics">
+              <section class="harness-metrics" aria-label="Agent reliability metrics">
                 <article>
                   <small>FIRST-PASS SUCCESS</small
                   ><strong>{{
@@ -3684,10 +3683,10 @@ onUnmounted(() => {
                 <section class="harness-panel model-performance">
                   <header>
                     <div>
-                      <h3>Model × harness performance</h3>
+                      <h3>Model performance</h3>
                       <p>
-                        Local outcomes by provider and model—not a generic
-                        leaderboard.
+                        Compare providers and models using runs from this
+                        machine.
                       </p>
                     </div>
                     <span>{{ harnessHealth.summary.runs }} runs</span>
@@ -3695,7 +3694,7 @@ onUnmounted(() => {
                   <div
                     class="health-table"
                     role="table"
-                    aria-label="Model harness performance"
+                    aria-label="Model performance"
                   >
                     <div class="health-table-head" role="row">
                       <span>Model</span><span>Complete</span
@@ -3765,8 +3764,7 @@ onUnmounted(() => {
                     <div>
                       <h3>Error taxonomy</h3>
                       <p>
-                        Unknown failures are harness defects; expected failures
-                        stay measurable.
+                        Separate expected failures from problems inside Aperta.
                       </p>
                     </div>
                   </header>
@@ -3847,7 +3845,7 @@ onUnmounted(() => {
               <main class="agent-ide-main">
                 <header class="agent-ide-toolbar">
                   <div>
-                    <p class="eyebrow">AGENT WORKBENCH</p>
+                    <p class="eyebrow">AGENT WORK</p>
                     <h2>
                       {{
                         selectedAgentConversation
@@ -3964,11 +3962,11 @@ onUnmounted(() => {
                   >
                     <header>
                       <div>
-                        <p class="eyebrow">POST-RUN UNDERSTANDING BRIEF</p>
+                        <p class="eyebrow">REVIEW WHAT CHANGED</p>
                         <h3>{{ agentUnderstandingHeadline(selectedAgentRun) }}</h3>
                         <p>
-                          Trace the result back to repository evidence before you
-                          treat the change as understood.
+                          Read the code and evidence before you accept the
+                          change.
                         </p>
                       </div>
                       <span :class="{ complete: selectedAgentRun.understanding?.completedAt }">
@@ -3986,7 +3984,7 @@ onUnmounted(() => {
                         </ul>
                       </article>
                       <article>
-                        <h4>What remains uncertain</h4>
+                        <h4>What is still uncertain</h4>
                         <ul>
                           <li
                             v-for="item in selectedAgentRun.understanding.uncertainties"
@@ -3997,10 +3995,10 @@ onUnmounted(() => {
                       <article class="understanding-questions">
                         <div>
                           <div>
-                            <h4>Demonstrate ownership</h4>
+                            <h4>Explain it in your own words</h4>
                             <p>
-                              These answers are retained with the run as durable
-                              learning evidence.
+                              Aperta saves these answers with the run for later
+                              review.
                             </p>
                           </div>
                           <span>
@@ -4024,7 +4022,7 @@ onUnmounted(() => {
                           :disabled="understandingSaving"
                           @click="saveUnderstanding"
                         >
-                          {{ understandingSaving ? 'Saving…' : 'Save understanding evidence' }}
+                          {{ understandingSaving ? 'Saving…' : 'Save review' }}
                         </button>
                       </article>
                     </div>
@@ -4036,7 +4034,7 @@ onUnmounted(() => {
                     <header :class="selectedAgentRun.promotion.status">
                       <div>
                         <p class="eyebrow">
-                          EXECUTION CONTRACT ·
+                          RUN PLAN ·
                           {{ selectedAgentRun.contract.source }}
                         </p>
                         <h3>{{ selectedAgentRun.contract.goal }}</h3>
@@ -4097,7 +4095,7 @@ onUnmounted(() => {
                         </details>
                       </article>
                       <article class="contract-evidence">
-                        <h4>Acceptance evidence</h4>
+                        <h4>Acceptance checks</h4>
                         <div
                           v-for="criterion in selectedAgentRun.contract
                             .criteria"
@@ -4128,7 +4126,7 @@ onUnmounted(() => {
                         </div>
                       </article>
                       <aside class="contract-critique">
-                        <h4>Independent harness critique</h4>
+                        <h4>Independent review</h4>
                         <div
                           v-for="finding in selectedAgentRun.critique
                             ?.findings ?? []"
@@ -4148,10 +4146,10 @@ onUnmounted(() => {
                         <div v-if="!selectedAgentRun.critique" class="pending">
                           <span><Ellipsis aria-hidden="true" /></span>
                           <div>
-                            <strong>Critique pending</strong>
+                            <strong>Review pending</strong>
                             <p>
-                              Aperta evaluates the final patch after execution
-                              and verification complete.
+                              Aperta reviews the final patch after the run and
+                              checks finish.
                             </p>
                           </div>
                         </div>
@@ -4235,7 +4233,7 @@ onUnmounted(() => {
                         <div
                           v-if="selectedAgentRun.capabilities?.length"
                           class="proof-loop-evidence"
-                          aria-label="Harness capability evidence"
+                          aria-label="Aperta capability evidence"
                         >
                           <article
                             v-for="capability in selectedAgentRun.capabilities"
@@ -4506,7 +4504,7 @@ onUnmounted(() => {
                         ><small>{{
                           selectedAgentRun.status === "verifying"
                             ? "Comparing evidence in the isolated patch"
-                            : "Following the execution contract"
+                            : "Following the run plan"
                         }}</small></span
                       >
                     </div>
@@ -4859,10 +4857,10 @@ onUnmounted(() => {
           <template v-else-if="view === 'settings'">
             <div class="section-head">
               <div>
-                <h2>Engines & Intelligence</h2>
+                <h2>Models and coding agents</h2>
                 <p>
-                  Choose the coding engine, then configure the models Aperta
-                  uses for its own intelligence.
+                  Choose what runs coding tasks. Then assign models to the AI
+                  work Aperta performs.
                 </p>
               </div>
               <div class="settings-head-actions">
@@ -4872,7 +4870,7 @@ onUnmounted(() => {
                   class="return-to-workbench"
                   @click="returnToAgentWorkbench"
                 >
-                  ← Agent Workbench
+                  ← Agent Work
                 </button>
                 <span class="engine-badge">{{
                   modelSettings?.secureStorage ?? "Loading secure storage…"
@@ -4885,9 +4883,9 @@ onUnmounted(() => {
             <section class="runtime-settings" aria-labelledby="agent-runtime-title">
               <header>
                 <div>
-                  <p class="eyebrow">EXECUTION ENGINE</p>
-                  <h3 id="agent-runtime-title">Choose who plans and edits.</h3>
-                  <p>The engine runs the coding loop. Aperta wraps every engine with the same evidence and ownership harness.</p>
+                  <p class="eyebrow">CODING AGENT</p>
+                  <h3 id="agent-runtime-title">Choose what runs coding tasks.</h3>
+                  <p>Your coding agent plans and edits. Aperta isolates the work, runs checks, and records evidence.</p>
                 </div>
                 <span class="runtime-active">ACTIVE · {{ modelSettings?.agentRuntime.kind ?? 'aperta' }}</span>
               </header>
@@ -4921,7 +4919,7 @@ onUnmounted(() => {
                 </div>
               </div>
               <div v-if="agentRuntimeForm.kind !== 'aperta'" class="cursor-runtime-config">
-                <label>{{ agentRuntimeLabel(agentRuntimeForm.kind) }} model <input v-model="agentRuntimeForm.model" :placeholder="agentRuntimeForm.kind === 'opencode' ? 'Optional — provider/model' : 'Optional — use runtime default'" /></label>
+                <label>{{ agentRuntimeLabel(agentRuntimeForm.kind) }} model <input v-model="agentRuntimeForm.model" :placeholder="agentRuntimeForm.kind === 'opencode' ? 'Optional: provider/model' : 'Optional: use runtime default'" /></label>
                 <p>Passed directly to the selected CLI. The runtime manages authentication; Aperta never stores its credentials.</p>
                 <p v-if="!modelSettings?.agentRuntimes.find((runtime) => runtime.kind === agentRuntimeForm.kind)?.available" class="runtime-install-note">
                   Install and authenticate {{ agentRuntimeLabel(agentRuntimeForm.kind) }}, refresh Settings, then activate it here.
@@ -4936,27 +4934,27 @@ onUnmounted(() => {
             </section>
             <section class="intelligence-routing" aria-labelledby="intelligence-routing-title">
               <header>
-                <p class="eyebrow">APERTA INTELLIGENCE SERVICES</p>
-                <h3 id="intelligence-routing-title">Where API models are actually used</h3>
+                <p class="eyebrow">HOW APERTA USES MODELS</p>
+                <h3 id="intelligence-routing-title">Choose a model for each AI task</h3>
               </header>
               <article :class="{ paused: modelSettings?.agentRuntime.kind !== 'aperta' }">
-                <span>1</span><div><strong>Builder</strong><p>{{ activeBuilderProfile?.name ?? 'Not configured' }} · {{ activeBuilderProfile?.model ?? 'Choose a model below' }}</p><small>{{ modelSettings?.agentRuntime.kind === 'aperta' ? 'Drives Aperta Native’s bounded coding loop.' : `Standby only—${agentRuntimeLabel(modelSettings?.agentRuntime.kind ?? 'aperta')} manages its own model.` }}</small></div>
+                <span>1</span><div><strong>Builder</strong><p>{{ activeBuilderProfile?.name ?? 'Not configured' }} · {{ activeBuilderProfile?.model ?? 'Choose a model below' }}</p><small>{{ modelSettings?.agentRuntime.kind === 'aperta' ? 'Runs the Aperta Native coding loop.' : `On standby. ${agentRuntimeLabel(modelSettings?.agentRuntime.kind ?? 'aperta')} manages its own model.` }}</small></div>
               </article>
               <article>
-                <span>2</span><div><strong>Coach</strong><p>{{ activeCoachProfile?.name ?? 'Not configured' }} · {{ activeCoachProfile?.model ?? 'Choose a model below' }}</p><small>Creates grounded ownership questions from repository evidence.</small></div>
+                <span>2</span><div><strong>Coach</strong><p>{{ activeCoachProfile?.name ?? 'Not configured' }} · {{ activeCoachProfile?.model ?? 'Choose a model below' }}</p><small>Creates review questions from repository evidence.</small></div>
               </article>
               <article class="deterministic">
-                <span>✓</span><div><strong>Verification</strong><p>Aperta repository checks</p><small>Deterministic commands and runtime probes—not a model verdict.</small></div>
+                <span>✓</span><div><strong>Verification</strong><p>Aperta repository checks</p><small>Project commands and runtime probes. A model does not decide the result.</small></div>
               </article>
             </section>
             <div class="settings-layout">
               <section class="profile-list">
                 <header>
-                  <p class="eyebrow">CONNECTED MODELS</p>
-                  <h3>Route models to Aperta services.</h3>
+                  <p class="eyebrow">SAVED MODELS</p>
+                  <h3>Assign models to Aperta tasks.</h3>
                   <p>
-                    Builder and Coach profiles are global. Verification remains
-                    deterministic and model-independent.
+                    Builder and Coach settings apply to every project. Aperta
+                    runs verification without a model.
                   </p>
                 </header>
                 <article
@@ -5125,12 +5123,12 @@ onUnmounted(() => {
         class="review-overlay"
         role="dialog"
         aria-modal="true"
-        aria-label="Ownership session"
+        aria-label="Ownership review"
       >
         <section class="review-window">
           <header class="review-header">
             <div>
-              <p class="eyebrow">OWNERSHIP SESSION</p>
+              <p class="eyebrow">OWNERSHIP REVIEW</p>
               <h2>
                 {{
                   brief?.story.title ?? "Turn generated code into code you own."
@@ -5159,17 +5157,17 @@ onUnmounted(() => {
                     complete: ownershipReady,
                     active: requiredAnswersComplete >= 3 && !ownershipReady,
                   }"
-                  ><b>4</b>Articulate</span
+                  ><b>4</b>Explain</span
                 >
               </div>
             </div>
             <div class="review-head-actions">
               <span v-if="brief"
-                ><b>{{ sessionProgress }}%</b> evidence complete</span
+                ><b>{{ sessionProgress }}%</b> review complete</span
               ><button
                 class="close-review icon-close"
                 @click="closeReview"
-                aria-label="Close ownership session"
+                aria-label="Close ownership review"
               >
                 <X class="nav-icon" aria-hidden="true" />
               </button>
@@ -5178,7 +5176,7 @@ onUnmounted(() => {
           <div v-if="reviewError" class="review-error">{{ reviewError }}</div>
           <div v-if="!brief && !reviewError" class="review-loading">
             <div class="spinner"></div>
-            Building your briefing…
+            Preparing your review…
           </div>
           <div v-else-if="completion" class="completion-panel">
             <div class="completion-orb">✓</div>
@@ -5187,13 +5185,13 @@ onUnmounted(() => {
               {{
                 completion.before === null
                   ? "A baseline now exists."
-                  : "Understanding moved."
+                  : "Review complete."
               }}
             </h2>
             <div class="confidence-delta">
               <span
                 ><small>BEFORE</small
-                ><strong>{{ completion.before ?? "—" }}</strong></span
+                ><strong>{{ completion.before ?? "Not rated" }}</strong></span
               ><i>→</i
               ><span
                 ><small>AFTER</small
@@ -5206,10 +5204,10 @@ onUnmounted(() => {
               minute{{
                 Math.round(completion.durationMs / 60000) === 1 ? "" : "s"
               }}
-              converting agent output into accountable knowledge.
+              reviewing what changed and why.
             </p>
             <button class="finish-review" @click="closeReview">
-              Return to review queue
+              Back to changes
             </button>
           </div>
           <div
@@ -5230,7 +5228,7 @@ onUnmounted(() => {
               </div>
               <div class="story-card">
                 <div>
-                  <small>CHANGE STORY</small
+                  <small>CHANGE SUMMARY</small
                   ><span :class="['risk-chip', brief.story.risk]"
                     >{{ brief.story.risk }} risk</span
                   >
@@ -5272,7 +5270,7 @@ onUnmounted(() => {
                   </ul>
                 </div>
                 <div>
-                  <small>TEST SIGNAL</small>
+                  <small>TEST STATUS</small>
                   <p>{{ brief.story.testStatus }}</p>
                 </div>
               </div>
@@ -5491,12 +5489,12 @@ onUnmounted(() => {
               type="button"
               class="ownership-resizer ownership-resizer-right"
               role="separator"
-              aria-label="Resize learning panel"
+              aria-label="Resize review panel"
               aria-orientation="vertical"
               :aria-valuemin="340"
               :aria-valuemax="620"
               :aria-valuenow="ownershipRightWidth"
-              title="Drag to resize learning panel"
+              title="Drag to resize review panel"
               @pointerdown.prevent="beginOwnershipPanelResize('right', $event)"
               @keydown.left.prevent="resizeOwnershipPanelBy('right', 20)"
               @keydown.right.prevent="resizeOwnershipPanelBy('right', -20)"
@@ -5510,7 +5508,7 @@ onUnmounted(() => {
               </div>
               <div v-if="brief.priorNotes.length" class="prior-notes">
                 <div>
-                  <h3>Prior ownership notes</h3>
+                  <h3>Earlier review notes</h3>
                   <span>{{ brief.priorNotes.length }} saved</span>
                 </div>
                 <article v-for="note in brief.priorNotes" :key="note.id">
@@ -5572,9 +5570,9 @@ onUnmounted(() => {
                 >
                 <template v-else
                   ><p>
-                    Generate questions adapted to this exact diff, impact graph,
-                    proof state, and your prior evidence. Coach can ask; it
-                    cannot certify ownership.
+                    Generate questions from this diff, its impact, its proof,
+                    and your earlier answers. Coach asks questions. It cannot
+                    decide whether you understand the code.
                   </p>
                   <button
                     :disabled="!coachStatus?.enabled || coachRunning"
@@ -5582,8 +5580,8 @@ onUnmounted(() => {
                   >
                     {{
                       coachRunning
-                        ? `${coachJob?.state ?? "Starting"} debrief…`
-                        : "Personalize this debrief"
+                        ? `${coachJob?.state ?? "Starting"} review…`
+                        : "Generate review questions"
                     }}</button
                   ><button
                     v-if="coachRunning"
@@ -5599,12 +5597,12 @@ onUnmounted(() => {
                 >
                 <p v-if="coachError" class="coach-error">{{ coachError }}</p>
                 <footer>
-                  Grounded in local evidence · never changes Trust Kernel
-                  verdicts · never grades your prose
+                  Uses local evidence · cannot change proof status · never
+                  grades your writing
                 </footer>
               </section>
               <p class="step-label"><b>3</b> Challenge</p>
-              <h3>Demonstrate ownership</h3>
+              <h3>Explain what you found</h3>
               <div class="evidence-questions">
                 <article
                   v-for="question in ownershipQuestions"
@@ -5637,11 +5635,11 @@ onUnmounted(() => {
                     :id="`answer-${question.id}`"
                     v-model="answers[question.id]"
                     rows="2"
-                    placeholder="Answer from your understanding, not the summary…"
+                    placeholder="Answer in your own words…"
                   ></textarea>
                 </article>
               </div>
-              <p class="step-label articulate"><b>4</b> Articulate</p>
+              <p class="step-label articulate"><b>4</b> Explain</p>
               <label for="explanation"
                 >Explain the change in your own words</label
               >
@@ -5682,11 +5680,11 @@ onUnmounted(() => {
                 :disabled="reviewSaving"
                 @click="saveReview"
               >
-                {{ reviewSaving ? "Saving…" : "Record ownership signal" }}
+                {{ reviewSaving ? "Saving…" : "Save review" }}
               </button>
               <small class="privacy-note"
-                >Aperta records evidence of the work. It never grades your
-                prose.</small
+                >Aperta saves evidence from the review. It never grades your
+                writing.</small
               >
             </aside>
           </div>
@@ -5705,7 +5703,7 @@ onUnmounted(() => {
                   hour: "numeric",
                   minute: "2-digit",
                 })
-              : "—"
+              : "Not updated"
           }}</span
         >
       </footer>

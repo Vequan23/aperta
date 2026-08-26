@@ -40,10 +40,15 @@ test("agent composer sends on Enter while preserving Shift Enter for new lines",
 test("uninitialized projects receive an explicit setup state and action", async () => {
   const root = join(import.meta.dirname, "..");
   const app = await readFile(join(root, "dashboard/src/App.vue"), "utf8");
-  assert.match(app, /Aperta isn’t initialized for \{\{ state\.repo \}\}/);
-  assert.match(app, /Repository and Git browsing are available/);
+  const vite = await readFile(join(root, "dashboard/vite.config.ts"), "utf8");
+  assert.match(app, /Set up Aperta for \{\{ state\.repo \}\}/);
+  assert.match(app, /You can browse the repository now/);
   assert.match(app, /@click="initializeProject"/);
   assert.match(app, /!state\?\.initialization\.initialized/);
+  assert.match(vite, /inspectProjectInitialization\(project\.root\)/);
+  assert.match(vite, /\.\.\.dashboard,[\s\S]{0,80}initialization,[\s\S]{0,80}projectId: project\.id/);
+  assert.match(vite, /url\.pathname === "\/file"/);
+  assert.match(vite, /readRepositoryFile\(project\.root/);
 });
 
 test("ownership side panels expose adjustable keyboard-accessible separators", async () => {
@@ -51,7 +56,7 @@ test("ownership side panels expose adjustable keyboard-accessible separators", a
   const app = await readFile(join(root, "dashboard/src/App.vue"), "utf8");
   const styles = await readFile(join(root, "dashboard/src/style.css"), "utf8");
   assert.match(app, /aria-label="Resize change briefing panel"/);
-  assert.match(app, /aria-label="Resize learning panel"/);
+  assert.match(app, /aria-label="Resize review panel"/);
   assert.match(app, /@keydown\.left\.prevent="resizeOwnershipPanelBy/);
   assert.match(styles, /\.review-body-wide \{ grid-template-columns: var\(--ownership-left-width,360px\) 7px minmax\(480px,1fr\) 7px var\(--ownership-right-width,460px\)/);
   assert.match(styles, /\.ownership-resizer:focus-visible/);
@@ -74,7 +79,7 @@ test("completed agent responses open the most useful result and render responses
   assert.match(app, /activity-evidence[\s\S]{0,80}action\.evidenceStatus/);
 });
 
-test("agent workbench routes to model settings and preserves a return path", async () => {
+test("agent work routes to model settings and preserves a return path", async () => {
   const root = join(import.meta.dirname, "..");
   const app = await readFile(join(root, "dashboard/src/App.vue"), "utf8");
   assert.match(app, /async function showAgentModelSettings\(\)/);
@@ -82,7 +87,7 @@ test("agent workbench routes to model settings and preserves a return path", asy
   assert.match(app, />\s*Model settings\s*<\/button>/);
   assert.match(app, /v-if="settingsOpenedFromAgents"/);
   assert.match(app, /@click="returnToAgentWorkbench"/);
-  assert.match(app, /← Agent Workbench/);
+  assert.match(app, /← Agent Work/);
   assert.doesNotMatch(app, /workbench-engine-chip/);
   assert.match(app, /class="agent-run-summary"/);
 });
@@ -96,7 +101,7 @@ test("no-change responses own a bounded scroll region on the Changes tab", async
   assert.match(styles, /\.agent-no-change > section > \.agent-markdown \{[^}]*flex: 1[^}]*overflow: auto/);
   assert.match(app, /<AgentMarkdown[\s\S]{0,120}:source="selectedAgentRun\.summary"[\s\S]{0,120}aria-label="Agent response"/);
   assert.match(app, /class="proof-loop-evidence"/);
-  assert.match(app, /aria-label="Harness capability evidence"/);
+  assert.match(app, /aria-label="Aperta capability evidence"/);
   assert.match(styles, /\.proof-loop-evidence \{[^}]*grid-template-columns: repeat\(auto-fit,minmax\(230px,1fr\)\)/);
 });
 
@@ -166,7 +171,7 @@ test("Impact Graph uses Lucide components instead of text glyph icons", async ()
   assert.doesNotMatch(impact, /[✓▶→]/);
 });
 
-test("Agent Workbench uses Lucide components for status and response icons", async () => {
+test("Agent Work uses Lucide components for status and response icons", async () => {
   const root = join(import.meta.dirname, "..");
   const app = await readFile(join(root, "dashboard/src/App.vue"), "utf8");
   const start = app.indexOf(`<template v-else-if="view === 'agents'">`);
@@ -184,7 +189,7 @@ test("collapsed navigation exposes keyboard and pointer tooltips", async () => {
   const root = join(import.meta.dirname, "..");
   const app = await readFile(join(root, "dashboard/src/App.vue"), "utf8");
   const styles = await readFile(join(root, "dashboard/src/style.css"), "utf8");
-  assert.match(app, /@mouseenter="showNavTooltip\(\$event, 'Agent Workbench'\)"/);
+  assert.match(app, /@mouseenter="showNavTooltip\(\$event, 'Agent Work'\)"/);
   assert.match(app, /@focus="showNavTooltip\(\$event, 'Repository'\)"/);
   assert.match(app, /class="collapsed-nav-tooltip"/);
   assert.match(app, /role="tooltip"/);

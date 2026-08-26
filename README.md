@@ -1,10 +1,10 @@
 <h1 align="center">Aperta</h1>
 
-<p align="center"><strong>The comprehension harness for AI-generated code.</strong></p>
+<p align="center"><strong>Own the code AI writes.</strong></p>
 
 <p align="center">
-  Agents help you write code faster. Aperta helps you prove it works, understand
-  why, and retain ownership after the agent leaves.
+  Aperta captures each code change, runs project checks, connects claims to
+  evidence, and helps you explain the result before it reaches your main branch.
 </p>
 
 <p align="center">
@@ -25,20 +25,19 @@
 > **Public beta:** Aperta is ready for evaluation on real local projects. Its
 > interfaces and evidence schema may evolve before the first stable release.
 
-## Code generation solved output. Aperta solves ownership.
+## AI can write the patch. You still own the result.
 
 AI agents can produce a convincing patch in minutes. They do not automatically
 give a maintainer the evidence or understanding needed to safely own that patch
 for years.
 
-Aperta closes that gap. It is a model-agnostic coding-agent harness and local
-learning system that:
+Aperta closes that gap. It is a local review and learning system that:
 
 - captures staged, unstaged, untracked, human, and agent-authored changes;
 - runs agent work in disposable Git worktrees instead of your live repository;
 - verifies results with project checks, runtime observations, and bounded probes;
 - connects claims, code, tests, actions, and human understanding in a Proof Graph;
-- turns risky changes into focused ownership sessions and scheduled recall; and
+- turns risky changes into focused ownership reviews and scheduled recall; and
 - keeps private developer memory outside the repository by default.
 
 **Aperta does not grade prose or pretend an LLM can certify understanding.** It
@@ -46,7 +45,7 @@ records evidence, exposes uncertainty, and leaves the final judgment with the
 person responsible for the software.
 
 If that is the future you want for AI-assisted development, consider starring
-the repository—it helps other builders find the project.
+the repository. It helps other builders find the project.
 
 ## Try it in 60 seconds
 
@@ -62,8 +61,8 @@ aperta dashboard
 ```
 
 `aperta init` starts the local observer. The dashboard opens a repository
-workspace containing the Agent Workbench, Git changes, Review Queue, Proof
-Graph, Learning Journal, and Harness Health.
+workspace containing Agent Work, Git Changes, Changes to Review, the Proof
+Graph, Review Notes, and Agent Reliability.
 
 Run an existing coding agent through Aperta:
 
@@ -71,7 +70,7 @@ Run an existing coding agent through Aperta:
 aperta run --intent "Add passwordless login" -- opencode
 ```
 
-Or use Aperta Native from the Agent Workbench. The patch remains isolated until
+Or use Aperta Native from Agent Work. The patch remains isolated until
 you review its changes and evidence and explicitly promote it.
 
 ## The trust and learning loop
@@ -96,16 +95,16 @@ useful evidence while making stale certainty visible.
 | --- | --- | --- |
 | Primary goal | Produce a plausible answer or patch | Produce reviewable code, proof, and understanding |
 | Workspace | Often edits the live tree | Uses a disposable Git worktree until promotion |
-| Verification | Agent reports success | Harness runs deterministic checks and captures output |
+| Verification | Agent reports success | Aperta runs deterministic checks and captures output |
 | Trust | Model evaluates its own work | Aperta owns the promotion gate and evidence model |
-| Memory | Conversation history | Local repository evidence and a durable Proof Graph |
-| Learning | Incidental | Review Queue, ownership sessions, Learn Next, and journal |
+| Memory | Conversation history | Local repository evidence and a Proof Graph |
+| Learning | Incidental | Changes to Review, Review Again, and saved notes |
 | Provider choice | Commonly coupled to one vendor | Model- and runtime-neutral |
 | Privacy | Often cloud-first | Private per-user storage outside Git |
 
 ## What you get
 
-### A real agent workbench
+### Agent work you can review
 
 Persistent, multi-turn agent conversations with plans, bounded tools, readable
 activity, syntax-highlighted responses, isolated patches, checks, repair loops,
@@ -124,19 +123,18 @@ observations, selected skill contracts, agent actions, explanations, and human
 ownership evidence. Claims remain visibly **proven**, **understood**,
 **supported**, **unproven**, **stale**, or **regressed**.
 
-### A comprehension loop that compounds
+### Reviews that return when needed
 
-The Review Queue turns a captured change into a risk-ranked Change Story.
-Ownership sessions ask trace, failure-mode, evidence, and debugging questions
-grounded in the actual diff. Completed sessions enter the Learning Journal and
-return through Learn Next after one, three, or seven days—or immediately when
-connected code changes again.
+Changes to Review turns a captured change into a risk-ranked summary. Ownership
+reviews ask about the code path, failure modes, evidence, and debugging steps.
+Completed reviews enter Review Notes and return through Review Again after one,
+three, or seven days. They return sooner when connected code changes.
 
-### Harness intelligence
+### Agent reliability
 
-Harness Health measures first-pass verification, repair recovery, tool
+Agent Reliability measures first-pass verification, repair recovery, tool
 reliability, promotion rate, provider latency, structured error classes, and an
-approximate Trusted Keep Rate. Harness defects stay distinguishable from model,
+approximate Trusted Keep Rate. Aperta defects stay separate from model,
 tool, and project failures.
 
 ## Models reason. Runtimes execute. Aperta owns trust.
@@ -147,7 +145,7 @@ Aperta intentionally separates these responsibilities:
 | --- | --- | --- |
 | **Model APIs** | Planning, reasoning, explanation, coaching | OpenAI, Anthropic, Google Gemini, DeepSeek, OpenRouter, Groq, Ollama, LM Studio, OpenAI-compatible endpoints |
 | **Agent runtimes** | Repository inspection, edits, and tool execution | Aperta Native, Claude Code, OpenCode, Cursor Agent |
-| **Aperta** | Skill selection, capabilities, isolation, verification, promotion, evidence, and learning | Provider-neutral Trust Kernel |
+| **Aperta** | Skill selection, capabilities, isolation, verification, promotion, evidence, and learning | Local trust and evidence layer |
 
 Changing the model or runtime never gives it authority to declare its own work
 correct, proven, or understood.
@@ -182,7 +180,7 @@ an analytics service.
 
 ## Safety boundaries
 
-The Agent Workbench is intentionally bounded:
+Agent Work has strict safety limits:
 
 - agent edits occur in a disposable Git worktree;
 - ignored files, credential-bearing files, `.git`, and `.comprehension` are blocked;
@@ -195,7 +193,7 @@ The Agent Workbench is intentionally bounded:
 - promotion fails if the real repository changed after the run began.
 
 Aperta currently caps a native implementation run at 48 actions, 20 writes,
-300 KB per file, and 1 MB of total writes. These constraints are harness policy,
+300 KB per file, and 1 MB of total writes. These constraints are Aperta policy,
 not suggestions sent to the model.
 
 Read [SECURITY.md](SECURITY.md) before using Aperta with a shared or sensitive
@@ -243,7 +241,7 @@ export APERTA_AI_PROVIDER="deepseek" # or openrouter / groq
 export DEEPSEEK_API_KEY="..."
 export APERTA_AI_MODEL="your-model-id"
 
-# Local Ollama — no API key required
+# Local Ollama: no API key required
 export APERTA_AI_PROVIDER="ollama"
 export APERTA_AI_MODEL="qwen2.5-coder"
 
@@ -295,12 +293,12 @@ npm run build:marketing
 
 ## Built for builders who want to remain responsible
 
-Aperta is for developers and teams who want the leverage of coding agents
+Aperta is for developers and teams who want the speed of coding agents
 without surrendering the ability to explain, verify, maintain, and improve the
 software those agents help create.
 
 - Found a bug or rough edge? [Open an issue](https://github.com/Vequan23/aperta/issues).
-- Have an idea for the harness or learning loop? Start a discussion in an issue.
+- Have an idea for the agent runtime or learning loop? Start a discussion in an issue.
 - Want to contribute? Read [CONTRIBUTING.md](CONTRIBUTING.md) and the
   [Code of Conduct](CODE_OF_CONDUCT.md).
 - Want to help the project travel? **Star the repository and share the

@@ -22,9 +22,9 @@ test("marketing site is wired for an isolated Vercel build", async () => {
 test("marketing page exposes its core story and safe external links", async () => {
   const app = await readFile(join(root, "marketing/src/App.vue"), "utf8");
   for (const section of ["product", "proof", "integrations", "privacy"]) assert.match(app, new RegExp(`id="${section}"`));
-  assert.match(app, /Your code works\./);
-  assert.match(app, /Do you own it\?/);
-  assert.match(app, /Private by architecture/);
+  assert.match(app, /Own the code/);
+  assert.match(app, /AI writes\./);
+  assert.match(app, /Private by default/);
   assert.doesNotMatch(app, /target="_blank"(?! rel="noreferrer")/);
 });
 

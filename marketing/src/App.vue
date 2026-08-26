@@ -10,10 +10,10 @@ const panther = ref(false);
 const menuOpen = ref(false);
 
 const workflow = [
-  { number: "01", title: "Observe", text: "Capture every staged, unstaged, human, and agent-authored change without interrupting generation.", icon: Eye },
-  { number: "02", title: "Prove", text: "Connect the change to tests, runtime checks, files, tools, and the evidence that actually supports it.", icon: ShieldCheck },
-  { number: "03", title: "Understand", text: "Turn the diff into an ownership session grounded in the code—not a generic AI explanation.", icon: BrainCircuit },
-  { number: "04", title: "Remember", text: "Build durable, private repository memory that shows what is proven, understood, stale, or unknown.", icon: Network },
+  { number: "01", title: "Capture changes", text: "Watch staged, unstaged, human, and agent-written changes through Git.", icon: Eye },
+  { number: "02", title: "Run checks", text: "Connect each change to tests, runtime checks, files, tools, and their output.", icon: ShieldCheck },
+  { number: "03", title: "Review the proof", text: "Trace the diff through real code and evidence. Write the explanation in your own words.", icon: BrainCircuit },
+  { number: "04", title: "Keep ownership", text: "Save what is proven, understood, stale, or still unknown in private project memory.", icon: Network },
 ];
 
 const providers = ["OpenAI", "Anthropic", "Google", "DeepSeek", "OpenRouter", "Groq", "Ollama", "LM Studio"];
@@ -42,18 +42,18 @@ const runtimes = ["Aperta Native", "Claude Code", "OpenCode", "Cursor"];
     <main id="top">
       <section class="hero section-wrap">
         <div class="hero-copy">
-          <p class="eyebrow"><Sparkles /> The comprehension harness</p>
-          <h1>Your code works.<br /><em>Do you own it?</em></h1>
-          <p class="hero-lede">Aperta makes invisible knowledge debt visible. It verifies what coding agents produce, traces the proof, and turns shipped code into durable human understanding.</p>
+          <p class="eyebrow"><Sparkles /> Understand the code AI writes</p>
+          <h1>Own the code<br /><em>AI writes.</em></h1>
+          <p class="hero-lede">Aperta captures each code change, runs project checks, connects claims to evidence, and helps you explain the result before it reaches your main branch.</p>
           <div class="hero-actions">
-            <a class="aqua-button primary" href="https://github.com/Vequan23/aperta" target="_blank" rel="noreferrer"><GitFork /> View on GitHub</a>
-            <a class="aqua-button secondary" href="#product">See how it works <ArrowRight /></a>
+            <a class="aqua-button primary" href="https://www.npmjs.com/package/aperta-cli" target="_blank" rel="noreferrer"><GitFork /> Install Aperta</a>
+            <a class="aqua-button secondary" href="#product">See the workflow <ArrowRight /></a>
           </div>
-          <div class="trust-row"><osx-badge tone="success" label="Open source" dot /><osx-badge tone="info" label="Provider neutral" dot /><osx-badge tone="success" label="Private by default" dot /></div>
+          <div class="trust-row"><osx-badge tone="success" label="Open source" dot /><osx-badge tone="info" label="Runs locally" dot /><osx-badge tone="success" label="Use your model" dot /></div>
         </div>
 
         <div class="hero-product" aria-label="Aperta product preview">
-          <osx-window class="hero-window" title="aperta" subtitle="Comprehension">
+          <osx-window class="hero-window" title="aperta" subtitle="Code ownership">
             <osx-icon slot="accessory" name="activity" :size="16" label="Watching repository" />
             <osx-toolbar slot="toolbar" label="Repository context" compact>
               <span slot="leading" class="repository-context"><osx-icon name="git-branch" :size="15" /> auth-service <b>/ main</b></span>
@@ -64,7 +64,7 @@ const runtimes = ["Aperta Native", "Claude Code", "OpenCode", "Cursor"];
                 <p>REPOSITORY</p>
                 <button><FileCode2 /> SecurityConfig.java <span>2.0</span></button>
                 <button><FileCode2 /> JwtService.java <span>1.0</span></button>
-                <button><FileCode2 /> AuthController.java <span>—</span></button>
+                <button><FileCode2 /> AuthController.java <span>New</span></button>
                 <small><i></i> Watching all changes</small>
               </aside>
               <div class="proof-preview">
@@ -85,30 +85,30 @@ const runtimes = ["Aperta Native", "Claude Code", "OpenCode", "Cursor"];
             <osx-status-bar slot="footer" label="Repository evidence connected" status="ready" detail="3 claims" />
           </osx-window>
           <div class="floating-card left"><Zap /><span><b>Every change captured</b>Human or agent. Staged or unstaged.</span></div>
-          <div class="floating-card right"><BookOpenCheck /><span><b>Ownership retained</b>Understanding survives the session.</span></div>
+          <div class="floating-card right"><BookOpenCheck /><span><b>Your review is saved</b>Understanding survives the session.</span></div>
         </div>
       </section>
 
       <section class="signal-strip" aria-label="Aperta principles">
-        <div><span>01</span><p><strong>Proof over confidence.</strong> A passing agent response is not evidence.</p></div>
-        <div><span>02</span><p><strong>Ownership over output.</strong> Shipping code is not the same as understanding it.</p></div>
-        <div><span>03</span><p><strong>Memory over repetition.</strong> Repository knowledge should compound.</p></div>
+        <div><span>01</span><p><strong>Check the claim.</strong> An agent saying “done” is not evidence.</p></div>
+        <div><span>02</span><p><strong>Review the patch.</strong> Working code is not always understood code.</p></div>
+        <div><span>03</span><p><strong>Save what you learn.</strong> Use the evidence again when the code changes.</p></div>
       </section>
 
       <section id="product" class="section-wrap product-section">
-        <div class="section-heading"><p class="eyebrow"><Code2 /> Built for the agentic era</p><h2>The layer between generated code<br />and trusted software.</h2><p>Agents optimize for completion. Aperta optimizes for what happens after completion: verification, review, comprehension, and durable ownership.</p></div>
+        <div class="section-heading"><p class="eyebrow"><Code2 /> From patch to ownership</p><h2>Review AI-written code<br />before you depend on it.</h2><p>Your agent writes the patch. Aperta captures the change, runs checks, shows the missing proof, and records your review.</p></div>
         <div class="workflow-grid"><article v-for="item in workflow" :key="item.number"><span>{{ item.number }}</span><component :is="item.icon" /><h3>{{ item.title }}</h3><p>{{ item.text }}</p></article></div>
       </section>
 
       <section id="proof" class="proof-section">
         <div class="section-wrap split-section">
           <div class="proof-copy">
-            <p class="eyebrow"><Network /> The proof graph</p><h2>Repository memory that can defend itself.</h2>
-            <p>Aperta connects behavior claims to the files that implement them, the checks that prove them, the people who understand them, and the later changes that invalidate them.</p>
+            <p class="eyebrow"><Network /> The proof graph</p><h2>See what changed and what proves it.</h2>
+            <p>Aperta connects each behavior claim to its code, checks, review history, and later changes that make old evidence stale.</p>
             <ul>
-              <li><span><Check /></span><div><strong>Know what is actually proven</strong><p>Separate executed evidence from structural inference and model confidence.</p></div></li>
-              <li><span><Check /></span><div><strong>See knowledge decay</strong><p>When connected code changes, Aperta marks old evidence stale instead of preserving false certainty.</p></div></li>
-              <li><span><Check /></span><div><strong>Review the unknowns</strong><p>Direct attention toward behavior that is risky, untested, or understood by nobody.</p></div></li>
+              <li><span><Check /></span><div><strong>Know what passed</strong><p>Separate executed checks from code analysis and model confidence.</p></div></li>
+              <li><span><Check /></span><div><strong>See stale evidence</strong><p>When connected code changes, Aperta marks old evidence stale.</p></div></li>
+              <li><span><Check /></span><div><strong>Find what is missing</strong><p>Focus on behavior that is risky, untested, or not yet understood.</p></div></li>
             </ul>
           </div>
           <osx-window class="memory-window" data-osx-theme="panther" title="Repository Memory" subtitle="Proof graph">
@@ -119,7 +119,7 @@ const runtimes = ["Aperta Native", "Claude Code", "OpenCode", "Cursor"];
             </osx-toolbar>
             <div class="claim-list">
               <article><i class="green"></i><div><small>PROVEN</small><strong>Expired access tokens are rejected</strong><p>SecurityConfig.java · JwtConfigurationTests.java</p></div><span>3 proofs</span></article>
-              <article><i class="blue"></i><div><small>UNDERSTOOD</small><strong>Refresh tokens rotate after use</strong><p>JwtService.java · ownership session</p></div><span>3 / 3</span></article>
+              <article><i class="blue"></i><div><small>UNDERSTOOD</small><strong>Refresh tokens rotate after use</strong><p>JwtService.java · ownership review</p></div><span>3 / 3</span></article>
               <article><i class="amber"></i><div><small>STALE</small><strong>Issuer validation matches configuration</strong><p>Invalidated by application.yml change</p></div><span>Aug 23</span></article>
               <article><i></i><div><small>UNPROVEN</small><strong>Concurrent refresh attempts are safe</strong><p>No executed evidence attached</p></div><span>Review</span></article>
             </div>
@@ -129,7 +129,7 @@ const runtimes = ["Aperta Native", "Claude Code", "OpenCode", "Cursor"];
       </section>
 
       <section id="integrations" class="section-wrap integrations-section">
-        <div class="section-heading centered"><p class="eyebrow"><SquareTerminal /> Bring your own intelligence</p><h2>One harness. The models and agents you already use.</h2><p>Aperta owns the evidence loop—not your model choice. Switch providers or runtimes without losing the verification and learning layer around them.</p></div>
+        <div class="section-heading centered"><p class="eyebrow"><SquareTerminal /> Bring your own AI</p><h2>Use the models and coding agents you already have.</h2><p>Switch providers or coding agents without losing your checks, evidence, and review history.</p></div>
         <div class="integration-panels">
           <article><header><BrainCircuit /><div><small>MODEL APIs</small><h3>Reasoning and coaching</h3></div></header><div class="logo-cloud"><span v-for="provider in providers" :key="provider">{{ provider }}</span></div></article>
           <article><header><SquareTerminal /><div><small>AGENT RUNTIMES</small><h3>Execution and tools</h3></div></header><div class="runtime-list"><span v-for="runtime in runtimes" :key="runtime"><i></i>{{ runtime }}<ChevronRight /></span></div></article>
@@ -139,7 +139,7 @@ const runtimes = ["Aperta Native", "Claude Code", "OpenCode", "Cursor"];
       <section id="privacy" class="section-wrap privacy-section">
         <div class="privacy-card">
           <div class="privacy-icon"><LockKeyhole /></div>
-          <div><p class="eyebrow">Private by architecture</p><h2>Your prompts are not team telemetry.</h2><p>Raw prompts, transcripts, diffs, learning answers, and runtime logs stay in private per-user storage outside Git. The repository carries only a non-sensitive project identity.</p></div>
+          <div><p class="eyebrow">Private by default</p><h2>Your project evidence stays local.</h2><p>Prompts, transcripts, diffs, review answers, and runtime logs stay in private storage outside Git. The repository stores only a project ID.</p></div>
           <div class="privacy-boundary"><span><GitBranch /> Repository</span><code>.comprehension/project.json</code><ArrowRight /><span><LockKeyhole /> Private memory</span><code>~/.aperta/repositories/…</code></div>
         </div>
       </section>
@@ -148,7 +148,7 @@ const runtimes = ["Aperta Native", "Claude Code", "OpenCode", "Cursor"];
         <div>
           <p class="eyebrow"><GitBranch /> Also from the ecosystem</p>
           <h2 id="ecosystem-title">Once the product works, earn the right attention.</h2>
-          <p>Distribution OS turns product truth into a human-governed distribution practice—without automating your identity.</p>
+          <p>Distribution OS finds useful distribution work, prepares a draft, and waits for your approval.</p>
         </div>
         <osx-ecosystem-card
           name="Distribution OS"
@@ -163,9 +163,9 @@ const runtimes = ["Aperta Native", "Claude Code", "OpenCode", "Cursor"];
         ></osx-ecosystem-card>
       </section>
 
-      <section class="final-cta section-wrap"><div><p class="eyebrow"><CircleDot /> Open source · beta</p><h2>Make every line of generated code explainable.</h2><p>Start building repository memory before the codebase outruns the people responsible for it.</p></div><a class="aqua-button primary large" href="https://github.com/Vequan23/aperta" target="_blank" rel="noreferrer"><GitFork /> Get Aperta <ArrowRight /></a></section>
+      <section class="final-cta section-wrap"><div><p class="eyebrow"><CircleDot /> Open source · beta</p><h2>Own your next AI-written change.</h2><p>Capture the patch, run the checks, and explain what you plan to maintain.</p></div><a class="aqua-button primary large" href="https://www.npmjs.com/package/aperta-cli" target="_blank" rel="noreferrer"><GitFork /> Install Aperta <ArrowRight /></a></section>
     </main>
 
-    <footer><a class="brand" href="#top"><span class="brand-mark">a</span><span>aperta</span></a><p>Comprehension infrastructure for AI-generated code.</p><div><a href="https://github.com/Vequan23/aperta" target="_blank" rel="noreferrer">GitHub</a><a href="https://github.com/Vequan23/aperta/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT License</a></div></footer>
+    <footer><a class="brand" href="#top"><span class="brand-mark">a</span><span>aperta</span></a><p>Evidence and understanding for AI-written code.</p><div><a href="https://github.com/Vequan23/aperta" target="_blank" rel="noreferrer">GitHub</a><a href="https://github.com/Vequan23/aperta/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT License</a></div></footer>
   </div>
 </template>
