@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildRepositoryProofGraph } from "../src/proof-graph.ts";
+import { buildRepositoryProofGraph, paginateRepositoryProofGraph } from "../src/proof-graph.ts";
 import type { AgentRun } from "../src/agent-harness.ts";
 import type { DiffEvent, LedgerEvent, OwnershipEvidenceEvent, ProofEvent } from "../src/types.ts";
 import { selectAgentSkill } from "../src/skills.ts";
@@ -33,6 +33,7 @@ test("a later change invalidates only proof claims connected to the changed file
   assert.equal(billing.status, "proven");
   assert.equal(graph.summary.stale, 1);
   assert.equal(graph.summary.proven, 1);
+  assert.equal(graph.summary.needsDefense, 3);
 });
 
 test("captured proof and human ownership become one claim with traceable evidence", () => {
@@ -46,6 +47,8 @@ test("captured proof and human ownership become one claim with traceable evidenc
   assert.deepEqual(claim.evidence.map((item) => item.kind), ["proof", "ownership"]);
   assert.ok(graph.edges.some((edge) => edge.relation === "proves" && edge.to === claim.id));
   assert.ok(graph.edges.some((edge) => edge.relation === "understands" && edge.to === claim.id));
+  assert.equal(claim.ownershipStatus, "defended");
+  assert.equal(graph.summary.defended, 1);
 });
 
 test("ownership without executable proof remains explicitly understood, not proven", () => {
@@ -55,4 +58,41 @@ test("ownership without executable proof remains explicitly understood, not prov
   assert.equal(graph.claims[0].status, "understood");
   assert.equal(graph.summary.understood, 1);
   assert.equal(graph.summary.proven, 0);
+  assert.equal(graph.claims[0].ownershipStatus, "defended");
+});
+
+test("projects repeated captures into one current record while retaining history", () => {
+  const first = { ...diff("diff-first", "2026-01-01T10:00:00.000Z", "src/config.ts"), fingerprint: "fingerprint-1" };
+  const duplicate = { ...diff("diff-duplicate", "2026-01-01T10:01:00.000Z", "src/config.ts"), fingerprint: "fingerprint-1" };
+  const latest = { ...diff("diff-latest", "2026-01-01T10:02:00.000Z", "src/config.ts"), fingerprint: "fingerprint-2" };
+  const graph = buildRepositoryProofGraph([], [first, duplicate, latest], "2026-01-03T00:00:00.000Z");
+
+  assert.deepEqual(graph.claims.map((claim) => claim.id), ["diff:diff-latest"]);
+  assert.equal(graph.claims[0].revisionCount, 3);
+  assert.equal(graph.claims[0].supersededCount, 2);
+  assert.equal(graph.claims[0].duplicateCount, 1);
+  assert.equal(graph.history.length, 2);
+  assert.equal(graph.summary.claims, 1);
+  assert.equal(graph.summary.history, 2);
+  assert.equal(graph.summary.duplicates, 1);
+});
+
+test("read-only agent questions do not become ownership claims", () => {
+  const question = run("33333333-3333-4333-8333-333333333333", "2026-01-01T10:00:00.000Z", "package.json", "unavailable");
+  question.intent = "What is the package name?";
+  question.files = [];
+  const graph = buildRepositoryProofGraph([question], [], "2026-01-03T00:00:00.000Z");
+  assert.equal(graph.claims.length, 0);
+  assert.equal(graph.summary.claims, 0);
+});
+
+test("paginates bounded attention, current, and history views", () => {
+  const events = Array.from({ length: 27 }, (_, index) => diff(`diff-${index}`, `2026-01-${String(index + 1).padStart(2, "0")}T10:00:00.000Z`, `src/file-${index}.ts`));
+  const graph = buildRepositoryProofGraph([], events, "2026-02-01T00:00:00.000Z");
+  const firstPage = paginateRepositoryProofGraph(graph, { scope: "attention", pageSize: 10 });
+  const lastPage = paginateRepositoryProofGraph(graph, { scope: "current", page: 3, pageSize: 10, query: "file-" });
+  assert.equal(firstPage.claims.length, 10);
+  assert.deepEqual(firstPage.page, { number: 1, size: 10, total: 27, pages: 3 });
+  assert.equal(lastPage.claims.length, 7);
+  assert.equal(lastPage.page.number, 3);
 });

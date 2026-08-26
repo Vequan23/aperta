@@ -68,11 +68,15 @@ export async function loadDashboardState(root: string, observer?: ObserverStatus
     if (!previous || previous.ts < rating.ts) latestRating.set(rating.diffId, rating);
   }
   const explained = new Set(explanations.map((event) => event.diffId));
-  type QueueItem = { diffId: string; ts: string; files: DiffEvent["files"]; intentId?: string; model?: string; kind: string; priority: string; score: ConfidenceScore | null; label: string; skippedAt?: string; supersededCount?: number };
+  const reviewIgnorePatterns = config.review.ignorePatterns.map((pattern) => new RegExp(pattern, "u"));
+  const visibleReviewFiles = (files: DiffEvent["files"]) => files.filter((file) => !reviewIgnorePatterns.some((pattern) => pattern.test(file.path)));
+  type QueueItem = { diffId: string; ts: string; files: DiffEvent["files"]; ignoredFileCount: number; intentId?: string; model?: string; kind: string; priority: string; score: ConfidenceScore | null; label: string; skippedAt?: string; supersededCount?: number };
   const candidates: QueueItem[] = [];
   for (const diff of diffs) {
     const score = ratingScore(latestRating.get(diff.id));
-    const base = { diffId: diff.id, ts: diff.ts, files: diff.files, intentId: diff.intentId, model: diff.model };
+    const files = visibleReviewFiles(diff.files);
+    if (!files.length) continue;
+    const base = { diffId: diff.id, ts: diff.ts, files, ignoredFileCount: diff.files.length - files.length, intentId: diff.intentId, model: diff.model };
     if (score == null) candidates.push({ ...base, kind: "unrated", priority: "high", score: null, label: "Confidence missing" });
     else if (!reviewedDiffs.has(diff.id) && score === 1 && !explained.has(diff.id)) candidates.push({ ...base, kind: "opaque", priority: "high", score, label: "Opaque and unexplained" });
     else if (!reviewedDiffs.has(diff.id) && score === 2 && !explained.has(diff.id)) candidates.push({ ...base, kind: "followable", priority: "medium", score, label: "Followable, not owned" });
@@ -118,13 +122,17 @@ export async function loadDashboardState(root: string, observer?: ObserverStatus
     const dueAt = laterOverlap?.ts ?? new Date(Date.parse(latest) + intervalDays * 86_400_000).toISOString();
     return { diffId: session.diffId, dueAt, due: Date.parse(dueAt) <= now, stale: Boolean(laterOverlap), score: session.score, files: session.files, label: laterOverlap ? "Code changed since you learned it" : session.score === 3 ? "Confirm this still feels owned" : "Strengthen this understanding" };
   }).sort((a, b) => Number(b.due) - Number(a.due) || a.dueAt.localeCompare(b.dueAt));
-  if (observer?.pending) queue.unshift({ diffId: `pending:${observer.pending.since}`, ts: observer.pending.since, files: observer.pending.files,
-    kind: "pending", priority: "medium", score: null, label: "Grouping active working-tree changes", model: "universal-git-observer", intentId: undefined });
+  if (observer?.pending) {
+    const pendingFiles = visibleReviewFiles(observer.pending.files);
+    if (pendingFiles.length) queue.unshift({ diffId: `pending:${observer.pending.since}`, ts: observer.pending.since, files: pendingFiles, ignoredFileCount: observer.pending.files.length - pendingFiles.length,
+      kind: "pending", priority: "medium", score: null, label: "Grouping active working-tree changes", model: "universal-git-observer", intentId: undefined });
+  }
   queue.sort((a, b) => Number(b.kind === "pending") - Number(a.kind === "pending") || Number(Boolean(a.skippedAt)) - Number(Boolean(b.skippedAt)) || b.ts.localeCompare(a.ts));
 
   return {
     generatedAt: new Date().toISOString(), repo: events.at(-1)?.repo ?? root.split("/").at(-1) ?? "repository",
     branch: events.at(-1)?.branch ?? "main", files, repositoryFiles, diffs, queue, learnNext, timeline, sessions, observer, observerActivity,
+    reviewSettings: { ignorePatterns: config.review.ignorePatterns },
     summary: {
       averageScore: scored.length ? scored.reduce((sum, file) => sum + (file.score ?? 0), 0) / scored.length : null,
       aiRatio: totalLines ? aiLines / totalLines : 0, unknownFiles: files.length - scored.length,

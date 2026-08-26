@@ -14,8 +14,9 @@ import { activeAgentRuntime, activeModelConfig, activateModelProfile, assignMode
 import { applyAgentRun, listAgentConversations, runExternalAgent, runModelAgent, saveAgentUnderstanding } from "./agent-harness.ts";
 import { buildHarnessHealth } from "./harness-intelligence.ts";
 import { readGitWorkingStatus } from "./git.ts";
-import { loadRepositoryProofGraph } from "./proof-graph.ts";
-import { initializeStore } from "./ledger.ts";
+import { loadRepositoryProofPage, type RepositoryProofScope, type RepositoryProofStatus } from "./proof-graph.ts";
+import { loadOwnershipDossier, renderChangeBrief } from "./ownership-dossier.ts";
+import { initializeStore, saveReviewIgnorePatterns } from "./ledger.ts";
 import { inspectProjectInitialization } from "./storage.ts";
 
 const mime = new Map([
@@ -113,6 +114,28 @@ async function startDashboardServer(root: string, port: number, shouldOpen: bool
         const payload = await loadOwnershipBrief(project.root, url.searchParams.get("diffId") ?? "");
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify(payload));
+        return;
+      }
+      if (url.pathname === "/api/dossier" && request.method === "GET") {
+        const project = await resolveProject(url.searchParams.get("project") ?? undefined, root);
+        await requireInitialized(project.root);
+        const payload = await loadOwnershipDossier(project.root, url.searchParams.get("diffId") ?? "");
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        response.end(JSON.stringify(payload));
+        return;
+      }
+      if (url.pathname === "/api/dossier/brief" && request.method === "GET") {
+        const project = await resolveProject(url.searchParams.get("project") ?? undefined, root);
+        await requireInitialized(project.root);
+        const diffId = url.searchParams.get("diffId") ?? "";
+        const payload = renderChangeBrief(await loadOwnershipDossier(project.root, diffId));
+        const filename = `aperta-change-brief-${diffId.slice(0, 8) || "change"}.md`;
+        response.writeHead(200, {
+          "content-type": "text/markdown; charset=utf-8",
+          "content-disposition": `attachment; filename="${filename}"`,
+          "cache-control": "no-store",
+        });
+        response.end(payload);
         return;
       }
       if (url.pathname === "/api/file" && request.method === "GET") {
@@ -246,7 +269,17 @@ async function startDashboardServer(root: string, port: number, shouldOpen: bool
       if (url.pathname === "/api/proof-graph" && request.method === "GET") {
         const project = await resolveProject(url.searchParams.get("project") ?? undefined, root);
         await requireInitialized(project.root);
-        const payload = await loadRepositoryProofGraph(project.root);
+        const requestedScope = url.searchParams.get("scope") ?? "attention";
+        const requestedStatus = url.searchParams.get("status") ?? "all";
+        const scopes = new Set<RepositoryProofScope>(["attention", "current", "history"]);
+        const statuses = new Set<RepositoryProofStatus | "all">(["all", "proven", "understood", "supported", "stale", "regressed", "unproven"]);
+        const payload = await loadRepositoryProofPage(project.root, {
+          scope: scopes.has(requestedScope as RepositoryProofScope) ? requestedScope as RepositoryProofScope : "attention",
+          status: statuses.has(requestedStatus as RepositoryProofStatus | "all") ? requestedStatus as RepositoryProofStatus | "all" : "all",
+          query: url.searchParams.get("query") ?? "",
+          page: Number(url.searchParams.get("page") ?? 1),
+          pageSize: Number(url.searchParams.get("pageSize") ?? 20),
+        });
         response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         response.end(JSON.stringify(payload));
         return;
@@ -325,6 +358,18 @@ async function startDashboardServer(root: string, port: number, shouldOpen: bool
         const payload = await recordQueueDisposition(project.root, { diffId: body.diffId, action: body.action });
         response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
         response.end(JSON.stringify(payload));
+        return;
+      }
+      if (url.pathname === "/api/review-settings" && request.method === "POST") {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        for await (const chunk of request) { size += chunk.length; if (size > 20_000) throw new Error("Review settings are too large"); chunks.push(chunk); }
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        const project = await resolveProject(body.projectId, root);
+        await requireInitialized(project.root);
+        const ignorePatterns = await saveReviewIgnorePatterns(project.root, body.ignorePatterns);
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ ignorePatterns }));
         return;
       }
       if (!serveAssets) {

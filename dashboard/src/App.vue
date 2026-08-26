@@ -46,6 +46,7 @@ import {
 import { parsePatch } from "./diff.ts";
 import { tokenizeLine } from "./syntax.ts";
 import AgentMarkdown from "./AgentMarkdown.vue";
+import OwnershipDossierPanel from "./OwnershipDossier.vue";
 import RepoTreeNode, { type TreeNode } from "./RepoTreeNode.vue";
 
 type FileRow = {
@@ -71,6 +72,7 @@ type QueueItem = {
   label: string;
   score: 1 | 2 | 3 | null;
   files: Diff["files"];
+  ignoredFileCount: number;
   model?: string;
   skippedAt?: string;
   supersededCount?: number;
@@ -472,16 +474,44 @@ type RepositoryProofClaim = {
   ts: string;
   files: string[];
   status: "proven" | "understood" | "supported" | "stale" | "regressed" | "unproven";
+  ownershipStatus: "unreviewed" | "reviewed" | "defended";
+  defendedAt: string | null;
+  revision: { commitSha?: string; fingerprint?: string; baseTree?: string; resultTree?: string };
   evidence: Array<{ id: string; kind: string; label: string; status: string; detail: string; ts: string }>;
   assuranceAt: string | null;
   invalidatedAt?: string;
   invalidatedBy?: string;
   invalidatedFiles: string[];
+  revisionCount: number;
+  supersededCount: number;
+  duplicateCount: number;
 };
 type RepositoryProofGraph = {
   generatedAt: string;
+  scope: "attention" | "current" | "history";
   claims: RepositoryProofClaim[];
-  summary: { claims: number; proven: number; understood: number; supported: number; stale: number; regressed: number; unproven: number; coveredFiles: number };
+  summary: { claims: number; history: number; superseded: number; duplicates: number; proven: number; understood: number; supported: number; stale: number; regressed: number; unproven: number; defended: number; needsDefense: number; coveredFiles: number };
+  page: { number: number; size: number; total: number; pages: number };
+};
+type OwnershipDossier = {
+  schemaVersion: 1;
+  id: string;
+  diffId: string;
+  repository: string;
+  branch: string;
+  capturedAt: string;
+  generatedAt: string;
+  revision: { commitSha?: string; fingerprint?: string; baseTree?: string; resultTree?: string };
+  status: "needs-defense" | "defended" | "proven" | "stale" | "regressed";
+  title: string;
+  intent: string | null;
+  risk: "low" | "medium" | "high";
+  behaviors: string[];
+  files: Diff["files"];
+  evidence: Array<{ id: string; label: string; kind: "code" | "test" | "proof" | "human"; path?: string; detail: string }>;
+  defense: { completed: boolean; completedAt: string | null; confidence: 1 | 2 | 3 | null; statement: string | null; answers: Array<{ kind: string; question: string; answer: string; path?: string }> };
+  uncertainty: string[];
+  freshness: { status: "current" | "stale" | "regressed"; checkedAt: string; assuredAt: string | null; invalidatedAt?: string; invalidatedBy?: string; invalidatedFiles: string[] };
 };
 type ObserverActivity = {
   ts: string;
@@ -536,6 +566,7 @@ type State = {
   repositoryFiles: string[];
   diffs: Diff[];
   queue: QueueItem[];
+  reviewSettings: { ignorePatterns: string[] };
   learnNext: LearnItem[];
   timeline: Array<{ ts: string; score: number; diffId: string }>;
   sessions: Session[];
@@ -653,6 +684,11 @@ const agentPaneOpen = ref(
 );
 const reviewItem = ref<QueueItem | null>(null);
 const queueActionId = ref("");
+const reviewFiltersOpen = ref(false);
+const reviewIgnoreText = ref("");
+const reviewFilterSaving = ref(false);
+const reviewFilterError = ref("");
+const reviewFilterProjectId = ref("");
 const brief = ref<OwnershipBrief | null>(null);
 const reviewScore = ref<1 | 2 | 3 | null>(null);
 const explanation = ref("");
@@ -818,7 +854,26 @@ const repositoryProofGraph = ref<RepositoryProofGraph | null>(null);
 const repositoryProofLoading = ref(false);
 const repositoryProofError = ref("");
 const proofGraphFilter = ref<"all" | RepositoryProofClaim["status"]>("all");
-const filteredRepositoryClaims = computed(() => repositoryProofGraph.value?.claims.filter((claim) => proofGraphFilter.value === "all" || claim.status === proofGraphFilter.value) ?? []);
+const proofGraphScope = ref<"attention" | "current" | "history">("attention");
+const proofGraphSearch = ref("");
+const proofGraphPage = ref(1);
+const ownershipDossier = ref<OwnershipDossier | null>(null);
+const ownershipDossierLoading = ref(false);
+const ownershipDossierError = ref("");
+const filteredRepositoryClaims = computed(() => repositoryProofGraph.value?.claims ?? []);
+const proofGraphScopeLabel = computed(() => proofGraphScope.value === "attention" ? "Needs attention" : proofGraphScope.value === "current" ? "Current records" : "History");
+const proofGraphStatusLabel = computed(() => proofGraphFilter.value === "all" ? "All statuses" : proofGraphFilter.value[0].toUpperCase() + proofGraphFilter.value.slice(1));
+const proofGraphResultSummary = computed(() => {
+  const result = repositoryProofGraph.value;
+  if (!result || result.page.total === 0) return "";
+  const first = (result.page.number - 1) * result.page.size + 1;
+  const last = Math.min(result.page.number * result.page.size, result.page.total);
+  const noun = proofGraphScope.value === "attention" ? "records that need attention" : proofGraphScope.value === "history" ? "historical revisions" : "current records";
+  return `Showing ${first}–${last} of ${result.page.total} ${noun}`;
+});
+const ownershipDossierBriefHref = computed(() => ownershipDossier.value
+  ? `/api/dossier/brief?diffId=${encodeURIComponent(ownershipDossier.value.diffId)}&project=${encodeURIComponent(projectId.value)}`
+  : "");
 
 const selectedFile = computed<FileRow | undefined>(
   () =>
@@ -1609,6 +1664,40 @@ async function skipQueueItem(item: QueueItem) {
   }
 }
 
+function addCommonReviewIgnorePatterns() {
+  const common = [
+    String.raw`(^|/)\.gitignore$`,
+    String.raw`(^|/)package(?:-lock\.json|\.lock)$`,
+    String.raw`(^|/)pnpm-lock\.yaml$`,
+    String.raw`(^|/)yarn\.lock$`,
+  ];
+  const existing = reviewIgnoreText.value.split("\n").map((value) => value.trim()).filter(Boolean);
+  reviewIgnoreText.value = [...new Set([...existing, ...common])].join("\n");
+}
+
+async function saveReviewFilters() {
+  if (reviewFilterSaving.value) return;
+  reviewFilterSaving.value = true;
+  reviewFilterError.value = "";
+  try {
+    const ignorePatterns = reviewIgnoreText.value.split("\n").map((value) => value.trim()).filter(Boolean);
+    const response = await fetch("/api/review-settings", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId: projectId.value, ignorePatterns }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error ?? "Could not save review filters");
+    reviewIgnoreText.value = body.ignorePatterns.join("\n");
+    reviewFiltersOpen.value = false;
+    await refresh();
+  } catch (reason) {
+    reviewFilterError.value = reason instanceof Error ? reason.message : String(reason);
+  } finally {
+    reviewFilterSaving.value = false;
+  }
+}
+
 async function personalizeDebrief() {
   if (!reviewItem.value || coachRunning.value || !coachStatus.value?.enabled)
     return;
@@ -1765,14 +1854,37 @@ async function initializeProject() {
   }
 }
 
-async function loadRepositoryProofGraph() {
+let proofGraphSearchTimer: ReturnType<typeof setTimeout> | undefined;
+function osxEventValue(event: Event): string {
+  return String((event as CustomEvent<string[]>).detail?.[0] ?? "");
+}
+
+function proofStatusTone(status: RepositoryProofClaim["status"]): "success" | "info" | "warning" | "danger" | "neutral" {
+  if (status === "proven") return "success";
+  if (status === "understood" || status === "supported") return "info";
+  if (status === "stale") return "warning";
+  if (status === "regressed") return "danger";
+  return "neutral";
+}
+
+async function loadRepositoryProofGraph(page = proofGraphPage.value) {
   repositoryProofLoading.value = true;
   repositoryProofError.value = "";
+  proofGraphPage.value = page;
   try {
-    const response = await fetch(`/api/proof-graph?project=${encodeURIComponent(projectId.value)}`, { cache: "no-store" });
+    const query = new URLSearchParams({
+      project: projectId.value,
+      scope: proofGraphScope.value,
+      status: proofGraphFilter.value,
+      query: proofGraphSearch.value,
+      page: String(page),
+      pageSize: "20",
+    });
+    const response = await fetch(`/api/proof-graph?${query}`, { cache: "no-store" });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error ?? "Could not load the repository proof graph");
     repositoryProofGraph.value = body;
+    proofGraphPage.value = body.page?.number ?? page;
   } catch (reason) {
     repositoryProofError.value = reason instanceof Error ? reason.message : String(reason);
   } finally {
@@ -1781,7 +1893,57 @@ async function loadRepositoryProofGraph() {
 }
 async function showRepositoryProofGraph() {
   view.value = "proofgraph";
-  await loadRepositoryProofGraph();
+  proofGraphScope.value = "attention";
+  proofGraphFilter.value = "all";
+  proofGraphSearch.value = "";
+  proofGraphPage.value = 1;
+  await loadRepositoryProofGraph(1);
+}
+
+function changeProofGraphScope(event: Event) {
+  const value = osxEventValue(event);
+  proofGraphScope.value = value === "History" ? "history" : value === "Current records" ? "current" : "attention";
+  proofGraphFilter.value = "all";
+  void loadRepositoryProofGraph(1);
+}
+
+function changeProofGraphStatus(event: Event) {
+  const value = osxEventValue(event).toLocaleLowerCase();
+  const allowed = new Set(["proven", "understood", "supported", "stale", "regressed", "unproven"]);
+  proofGraphFilter.value = allowed.has(value) ? value as RepositoryProofClaim["status"] : "all";
+  void loadRepositoryProofGraph(1);
+}
+
+function changeProofGraphSearch(event: Event) {
+  proofGraphSearch.value = osxEventValue(event);
+  if (proofGraphSearchTimer) clearTimeout(proofGraphSearchTimer);
+  proofGraphSearchTimer = setTimeout(() => void loadRepositoryProofGraph(1), 250);
+}
+
+async function showOwnershipDossier(diffId: string) {
+  ownershipDossierLoading.value = true;
+  ownershipDossierError.value = "";
+  try {
+    const response = await fetch(`/api/dossier?diffId=${encodeURIComponent(diffId)}&project=${encodeURIComponent(projectId.value)}`, { cache: "no-store" });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error ?? "Could not build the ownership record");
+    ownershipDossier.value = body;
+  } catch (reason) {
+    ownershipDossierError.value = reason instanceof Error ? reason.message : String(reason);
+  } finally {
+    ownershipDossierLoading.value = false;
+  }
+}
+
+function defendFromDossier(diffId: string) {
+  ownershipDossier.value = null;
+  openDiff(diffId);
+}
+
+async function openDossierFile(path: string) {
+  ownershipDossier.value = null;
+  view.value = "map";
+  await selectFile(path);
 }
 
 async function loadHarnessHealth() {
@@ -2203,6 +2365,11 @@ async function refresh(retried = false) {
     if (!response.ok) throw new Error("Could not read the local ledger");
     state.value = await response.json();
     projectId.value = state.value?.projectId ?? "";
+    if (state.value && (reviewFilterProjectId.value !== state.value.projectId || !reviewFiltersOpen.value)) {
+      reviewFilterProjectId.value = state.value.projectId;
+      reviewIgnoreText.value = state.value.reviewSettings.ignorePatterns.join("\n");
+      reviewFilterError.value = "";
+    }
     if (projectId.value)
       localStorage.setItem("aperta-project", projectId.value);
     if (!selectedPath.value && state.value?.repositoryFiles.length)
@@ -2244,7 +2411,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main class="desktop" :class="`theme-${theme}`">
+  <main class="desktop" :class="`theme-${theme}`" :data-osx-theme="theme === 'panther' ? 'panther' : theme === 'plain' ? 'graphite' : 'aqua'">
     <section class="window" aria-label="Aperta code ownership dashboard">
       <header class="titlebar">
         <div class="traffic" aria-hidden="true">
@@ -2466,15 +2633,15 @@ onUnmounted(() => {
             <button
               :class="['source-item', { selected: view === 'proofgraph' }]"
               :aria-current="view === 'proofgraph' ? 'page' : undefined"
-              title="Proof Graph"
-              @mouseenter="showNavTooltip($event, 'Proof Graph')"
-              @focus="showNavTooltip($event, 'Proof Graph')"
+              title="Ownership Graph"
+              @mouseenter="showNavTooltip($event, 'Ownership Graph')"
+              @focus="showNavTooltip($event, 'Ownership Graph')"
               @mouseleave="hideNavTooltip"
               @blur="hideNavTooltip"
               @click="showRepositoryProofGraph"
             >
               <BadgeCheck class="nav-icon" aria-hidden="true" />
-              <span class="item-label">Proof Graph</span
+              <span class="item-label">Ownership Graph</span
               ><b v-if="repositoryProofGraph?.summary.stale" class="attention-count">{{ repositoryProofGraph.summary.stale }}</b>
             </button>
             <button
@@ -2751,8 +2918,26 @@ onUnmounted(() => {
                   overlapping captures for you.
                 </p>
               </div>
-              <span class="count-badge">{{ state.queue.length }} waiting</span>
+              <div class="review-head-actions">
+                <button class="review-filter-toggle" type="button" :aria-expanded="reviewFiltersOpen" @click="reviewFiltersOpen = !reviewFiltersOpen">
+                  Review filters{{ state.reviewSettings.ignorePatterns.length ? ` · ${state.reviewSettings.ignorePatterns.length}` : '' }}
+                </button>
+                <span class="count-badge">{{ state.queue.length }} waiting</span>
+              </div>
             </div>
+            <form v-if="reviewFiltersOpen" class="review-filter-panel" @submit.prevent="saveReviewFilters">
+              <div>
+                <strong>Hide low-signal files from this queue</strong>
+                <p>Enter one JavaScript regex per line. Patterns match repository-relative paths. Aperta still captures these files and keeps their evidence and history.</p>
+              </div>
+              <textarea v-model="reviewIgnoreText" rows="5" spellcheck="false" placeholder="(^|/)package-lock\.json$&#10;(^|/)\.gitignore$"></textarea>
+              <div class="review-filter-actions">
+                <button type="button" class="secondary" @click="addCommonReviewIgnorePatterns">Add common examples</button>
+                <button type="button" class="secondary" @click="reviewFiltersOpen = false; reviewFilterError = ''">Cancel</button>
+                <button type="submit" :disabled="reviewFilterSaving">{{ reviewFilterSaving ? 'Saving…' : 'Save filters' }}</button>
+              </div>
+              <p v-if="reviewFilterError" class="review-filter-error" role="alert">{{ reviewFilterError }}</p>
+            </form>
             <div class="queue-list">
               <article
                 v-for="item in state.queue"
@@ -2784,6 +2969,9 @@ onUnmounted(() => {
                   <small v-if="item.supersededCount" class="queue-superseded">
                     Includes {{ item.supersededCount }} earlier overlapping
                     capture{{ item.supersededCount === 1 ? "" : "s" }}.
+                  </small>
+                  <small v-if="item.ignoredFileCount" class="queue-filtered">
+                    {{ item.ignoredFileCount }} file{{ item.ignoredFileCount === 1 ? '' : 's' }} hidden by review filters.
                   </small>
                   <small v-if="item.skippedAt" class="queue-skipped">
                     Skipped for now · returns after current reviews
@@ -3378,14 +3566,13 @@ onUnmounted(() => {
           <template v-else-if="view === 'proofgraph'">
             <div class="section-head proof-graph-head">
               <div>
-                <p class="eyebrow">PROJECT EVIDENCE</p>
-                <h2>Proof Graph</h2>
-                <p>See what changed, what proves it, who reviewed it, and which evidence is stale.</p>
+                <p class="eyebrow">PROJECT OWNERSHIP</p>
+                <h2>Ownership Graph</h2>
+                <p>See what changed, what supports it, who can defend it, and what needs another look.</p>
               </div>
-              <button :disabled="repositoryProofLoading" @click="loadRepositoryProofGraph">
-                <RefreshCw class="button-icon" aria-hidden="true" />
-                {{ repositoryProofLoading ? "Rebuilding…" : "Refresh graph" }}
-              </button>
+              <osx-button icon="refresh-cw" :disabled="repositoryProofLoading" @click="loadRepositoryProofGraph()">
+                {{ repositoryProofLoading ? "Refreshing…" : "Refresh records" }}
+              </osx-button>
             </div>
             <div v-if="repositoryProofError" class="settings-error">{{ repositoryProofError }}</div>
             <div v-else-if="repositoryProofLoading && !repositoryProofGraph" class="loading-panel">
@@ -3394,41 +3581,64 @@ onUnmounted(() => {
             </div>
             <div v-else-if="repositoryProofGraph" class="repository-proof-graph">
               <section class="proof-graph-summary" aria-label="Repository proof coverage">
-                <article><strong>{{ repositoryProofGraph.summary.claims }}</strong><span>behavior claims</span></article>
-                <article class="proven"><strong>{{ repositoryProofGraph.summary.proven }}</strong><span>executable proof</span></article>
-                <article class="understood"><strong>{{ repositoryProofGraph.summary.understood }}</strong><span>reviewed by you</span></article>
-                <article class="stale"><strong>{{ repositoryProofGraph.summary.stale }}</strong><span>stale evidence</span></article>
-                <article><strong>{{ repositoryProofGraph.summary.coveredFiles }}</strong><span>connected files</span></article>
+                <article><osx-heading :level="3" variant="display">{{ repositoryProofGraph.summary.claims }}</osx-heading><osx-copy size="small" tone="muted">current records</osx-copy></article>
+                <article class="proven"><osx-heading :level="3" variant="display">{{ repositoryProofGraph.summary.proven }}</osx-heading><osx-copy size="small" tone="muted">with executable proof</osx-copy></article>
+                <article class="understood"><osx-heading :level="3" variant="display">{{ repositoryProofGraph.summary.defended }}</osx-heading><osx-copy size="small" tone="muted">defended by you</osx-copy></article>
+                <article class="stale"><osx-heading :level="3" variant="display">{{ repositoryProofGraph.summary.stale }}</osx-heading><osx-copy size="small" tone="muted">need another look</osx-copy></article>
+                <article><osx-heading :level="3" variant="display">{{ repositoryProofGraph.summary.history }}</osx-heading><osx-copy size="small" tone="muted">historical revisions</osx-copy></article>
+                <article><osx-heading :level="3" variant="display">{{ repositoryProofGraph.summary.coveredFiles }}</osx-heading><osx-copy size="small" tone="muted">connected files</osx-copy></article>
               </section>
-              <div class="proof-graph-toolbar" role="group" aria-label="Filter proof claims">
-                <button v-for="filter in ['all', 'proven', 'understood', 'supported', 'stale', 'regressed', 'unproven'] as const" :key="filter" :class="{ active: proofGraphFilter === filter }" @click="proofGraphFilter = filter">
-                  {{ filter }}<span>{{ filter === 'all' ? repositoryProofGraph.summary.claims : repositoryProofGraph.summary[filter] }}</span>
-                </button>
-              </div>
+              <section class="proof-record-toolbar" aria-label="Ownership record filters">
+                <div class="proof-scope-control">
+                  <osx-copy size="small" tone="muted" weight="bold">View</osx-copy>
+                  <osx-segmented-control items="Needs attention,Current records,History" :value="proofGraphScopeLabel" label="Ownership record view" @change="changeProofGraphScope" />
+                </div>
+                <div class="proof-query-controls">
+                  <osx-text-field type="search" label="Find a record" placeholder="Search files, behavior, or evidence" :value="proofGraphSearch" @input="changeProofGraphSearch" />
+                  <osx-select options="All statuses,Proven,Understood,Supported,Stale,Regressed,Unproven" :value="proofGraphStatusLabel" label="Evidence status" @change="changeProofGraphStatus" />
+                </div>
+              </section>
+              <osx-copy v-if="proofGraphResultSummary" size="small" tone="muted">{{ proofGraphResultSummary }}</osx-copy>
               <section v-if="filteredRepositoryClaims.length" class="proof-claim-list">
                 <article v-for="claim in filteredRepositoryClaims" :key="claim.id" :class="['proof-claim', claim.status]">
                   <header>
                     <span :class="['proof-status-dot', claim.status]" aria-hidden="true"></span>
-                    <div><p class="eyebrow">{{ claim.source === 'agent-run' ? 'AGENT BEHAVIOR' : 'CAPTURED CHANGE' }}</p><h3>{{ claim.title }}</h3></div>
-                    <span :class="['proof-status-chip', claim.status]">{{ claim.status }}</span>
+                    <div><osx-heading :level="3" variant="label" tone="muted">{{ claim.source === 'agent-run' ? 'Agent behavior' : proofGraphScope === 'history' ? 'Historical revision' : 'Captured change' }}</osx-heading><osx-heading :level="3" variant="section">{{ claim.title }}</osx-heading></div>
+                    <div class="proof-claim-badges"><osx-badge :tone="proofStatusTone(claim.status)" :label="claim.status" dot /><osx-badge v-if="claim.revisionCount > 1" tone="neutral" :label="`${claim.revisionCount} revisions`" /></div>
                   </header>
+                  <osx-copy class="proof-ownership-state" size="small" tone="muted">{{ claim.ownershipStatus === 'defended' ? 'Engineer defense on record' : claim.ownershipStatus === 'reviewed' ? 'Reviewed, but not yet defended' : 'Needs an engineer defense' }}</osx-copy>
                   <AgentMarkdown class="proof-claim-detail" :source="claim.detail" />
                   <div class="proof-claim-files">
-                    <button v-for="path in claim.files" :key="path" type="button" @click="view = 'map'; selectFile(path)">{{ path }}</button>
-                    <span v-if="!claim.files.length">Repository observation</span>
+                    <osx-button v-for="path in claim.files" :key="path" size="small" icon="file-code" @click="view = 'map'; selectFile(path)">{{ path }}</osx-button>
+                    <osx-copy v-if="!claim.files.length" size="small" tone="muted">Repository observation</osx-copy>
                   </div>
-                  <div v-if="claim.invalidatedAt" class="proof-invalidation">
-                    <TriangleAlert class="button-icon" aria-hidden="true" />
-                    <div><strong>Evidence invalidated by a later change</strong><span>{{ claim.invalidatedBy }} changed {{ claim.invalidatedFiles.join(', ') }} on {{ compactDate(claim.invalidatedAt) }}.</span></div>
+                  <div v-if="claim.invalidatedAt" class="proof-stale-callout" role="status">
+                    <osx-icon name="warning" :size="18" label="Warning" />
+                    <div>
+                      <osx-copy size="small" weight="bold">Evidence needs another look</osx-copy>
+                      <osx-copy size="small" tone="muted">{{ claim.invalidatedBy }} changed {{ claim.invalidatedFiles.join(', ') }} on {{ compactDate(claim.invalidatedAt) }}.</osx-copy>
+                    </div>
                   </div>
                   <details v-if="claim.evidence.length" class="proof-evidence-list">
                     <summary>{{ claim.evidence.length }} evidence record{{ claim.evidence.length === 1 ? '' : 's' }}</summary>
                     <ul><li v-for="item in claim.evidence" :key="item.id"><span :class="['evidence-kind', item.kind]">{{ item.kind }}</span><div><strong>{{ item.label }}</strong><p>{{ item.detail }}</p></div><time>{{ compactDate(item.ts) }}</time></li></ul>
                   </details>
-                  <footer><span>{{ compactDate(claim.ts) }}</span><span v-if="claim.assuranceAt">Last assured {{ compactDate(claim.assuranceAt) }}</span></footer>
+                  <footer>
+                    <osx-copy size="small" tone="muted">{{ compactDate(claim.ts) }}</osx-copy>
+                    <osx-copy v-if="claim.assuranceAt" size="small" tone="muted">Last assured {{ compactDate(claim.assuranceAt) }}</osx-copy>
+                    <osx-button v-if="claim.source === 'captured-change'" size="small" :disabled="ownershipDossierLoading" @click="showOwnershipDossier(claim.id.slice(5))">
+                      {{ ownershipDossierLoading ? 'Building record…' : 'Open record' }}
+                    </osx-button>
+                  </footer>
                 </article>
               </section>
-              <div v-else class="empty-state"><strong>No claims match this filter.</strong><span>Run an agent task, run a check, or review a change to add project evidence.</span></div>
+              <osx-empty-state v-else title="No ownership records match" description="Try another status, clear the search, or switch between current records and history." icon="search" />
+              <nav v-if="repositoryProofGraph.page.pages > 1" class="proof-pagination" aria-label="Ownership record pages">
+                <osx-button size="small" icon="chevron-left" :disabled="repositoryProofGraph.page.number <= 1 || repositoryProofLoading" @click="loadRepositoryProofGraph(repositoryProofGraph.page.number - 1)">Previous</osx-button>
+                <osx-copy size="small" tone="muted">Page {{ repositoryProofGraph.page.number }} of {{ repositoryProofGraph.page.pages }}</osx-copy>
+                <osx-button size="small" icon="chevron-right" icon-position="trailing" :disabled="repositoryProofGraph.page.number >= repositoryProofGraph.page.pages || repositoryProofLoading" @click="loadRepositoryProofGraph(repositoryProofGraph.page.number + 1)">Next</osx-button>
+              </nav>
+              <p v-if="ownershipDossierError" class="settings-error" role="alert">{{ ownershipDossierError }}</p>
             </div>
           </template>
 
@@ -5142,7 +5352,7 @@ onUnmounted(() => {
         <section class="review-window">
           <header class="review-header">
             <div>
-              <p class="eyebrow">OWNERSHIP REVIEW</p>
+              <p class="eyebrow">DEFEND THIS CHANGE</p>
               <h2>
                 {{
                   brief?.story.title ?? "Turn generated code into code you own."
@@ -5171,13 +5381,13 @@ onUnmounted(() => {
                     complete: ownershipReady,
                     active: requiredAnswersComplete >= 3 && !ownershipReady,
                   }"
-                  ><b>4</b>Explain</span
+                  ><b>4</b>Defend</span
                 >
               </div>
             </div>
             <div class="review-head-actions">
               <span v-if="brief"
-                ><b>{{ sessionProgress }}%</b> review complete</span
+                ><b>{{ sessionProgress }}%</b> defense complete</span
               ><button
                 class="close-review icon-close"
                 @click="closeReview"
@@ -5194,12 +5404,12 @@ onUnmounted(() => {
           </div>
           <div v-else-if="completion" class="completion-panel">
             <div class="completion-orb">✓</div>
-            <p class="eyebrow">SESSION RECORDED</p>
+            <p class="eyebrow">DEFENSE RECORDED</p>
             <h2>
               {{
                 completion.before === null
                   ? "A baseline now exists."
-                  : "Review complete."
+                  : "Defense complete."
               }}
             </h2>
             <div class="confidence-delta">
@@ -5218,7 +5428,7 @@ onUnmounted(() => {
               minute{{
                 Math.round(completion.durationMs / 60000) === 1 ? "" : "s"
               }}
-              reviewing what changed and why.
+              tracing what changed, what supports it, and where it could fail.
             </p>
             <button class="finish-review" @click="closeReview">
               Back to changes
@@ -5616,7 +5826,7 @@ onUnmounted(() => {
                 </footer>
               </section>
               <p class="step-label"><b>3</b> Challenge</p>
-              <h3>Explain what you found</h3>
+              <h3>Defend what you found</h3>
               <div class="evidence-questions">
                 <article
                   v-for="question in ownershipQuestions"
@@ -5653,9 +5863,9 @@ onUnmounted(() => {
                   ></textarea>
                 </article>
               </div>
-              <p class="step-label articulate"><b>4</b> Explain</p>
+              <p class="step-label articulate"><b>4</b> Defend</p>
               <label for="explanation"
-                >Explain the change in your own words</label
+                >State what changed and why you can stand behind it</label
               >
               <textarea
                 id="explanation"
@@ -5694,7 +5904,7 @@ onUnmounted(() => {
                 :disabled="reviewSaving"
                 @click="saveReview"
               >
-                {{ reviewSaving ? "Saving…" : "Save review" }}
+                {{ reviewSaving ? "Saving…" : "Record defense" }}
               </button>
               <small class="privacy-note"
                 >Aperta saves evidence from the review. It never grades your
@@ -5704,6 +5914,15 @@ onUnmounted(() => {
           </div>
         </section>
       </div>
+      <OwnershipDossierPanel
+        v-if="ownershipDossier"
+        :dossier="ownershipDossier"
+        :brief-href="ownershipDossierBriefHref"
+        :theme="theme"
+        @close="ownershipDossier = null"
+        @defend="defendFromDossier"
+        @open-file="openDossierFile"
+      />
       <footer class="statusbar">
         <span
           ><i class="status-dot"></i>Private local memory · outside Git · Coach

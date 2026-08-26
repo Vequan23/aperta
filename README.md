@@ -116,19 +116,37 @@ Aperta observes stable Git-visible changes regardless of whether they came from
 a human, editor, script, or agent. Attribution adds evidence; it is never a
 requirement for review.
 
-### Behavioral Proof Graph
+### Living Ownership Graph
 
-The graph connects behavior claims to implementation files, tests, runtime
-observations, selected skill contracts, agent actions, explanations, and human
-ownership evidence. Claims remain visibly **proven**, **understood**,
-**supported**, **unproven**, **stale**, or **regressed**.
+The graph connects behavior claims to code, tests, runtime observations,
+agent actions, and human defenses. It shows which changes have executable proof,
+which ones an engineer can defend, and which evidence needs another look.
 
-### Reviews that return when needed
+The default view is a short, searchable list of records that need attention.
+Repeated captures roll up into the latest current record instead of filling the
+screen, while the complete append-only revision history remains available.
+
+Each captured change also gets an Ownership Record. The record keeps the
+change, its revision, evidence, open questions, and engineer defense in one place.
+
+### Defend each change
 
 Changes to Review turns a captured change into a risk-ranked summary. Ownership
-reviews ask about the code path, failure modes, evidence, and debugging steps.
+reviews ask you to trace the code path, test a failure mode, locate evidence, and
+state what you still do not know. Aperta records your answers. It does not let a
+model certify your understanding.
+
+Project-private review filters can hide path noise from this queue with validated
+regular expressions without removing those files from capture, history, or evidence.
 Completed reviews enter Review Notes and return through Review Again after one,
 three, or seven days. They return sooner when connected code changes.
+
+### Publish what the evidence supports
+
+Download a cited change brief from any Ownership Record. The brief includes the
+captured revision, code and test sources, executable proof, the engineer defense,
+and open questions. A stale record produces a stale brief, so polished writing
+never hides outdated evidence.
 
 ### Agent reliability
 
@@ -152,7 +170,7 @@ correct, proven, or understood.
 
 External CLI mechanics are provided by `@vraxis/agent-v`: runtime discovery,
 bounded readiness probes, structured execution, normalized failures, and run
-provenance. Aperta still owns the product-specific safety boundary—skill
+provenance. Aperta still owns the product-specific safety boundary: skill
 selection, disposable worktrees, checks, evidence, human review, and promotion.
 An installed CLI is not shown as ready until its explicit probe succeeds, and
 every external run records the runtime version and adapter strategy used.

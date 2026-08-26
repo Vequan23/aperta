@@ -127,6 +127,25 @@ test("proof graph responses use structured Markdown in a bounded region", async 
   assert.match(styles, /\.proof-claim-detail\.agent-markdown \{[^}]*max-height: 320px[^}]*overflow: auto/);
 });
 
+test("ownership records use osx-components and a bounded, searchable projection", async () => {
+  const root = join(import.meta.dirname, "..");
+  const app = await readFile(join(root, "dashboard/src/App.vue"), "utf8");
+  assert.match(app, /<osx-segmented-control[^>]*Needs attention,Current records,History/);
+  assert.match(app, /<osx-text-field[^>]*label="Find a record"/);
+  assert.match(app, /<osx-select[^>]*label="Evidence status"/);
+  assert.match(app, /<section class="proof-record-toolbar" aria-label="Ownership record filters">/);
+  assert.match(app, /repositoryProofGraph\.page\.pages > 1/);
+  assert.match(app, /proofGraphResultSummary/);
+  assert.match(app, /Showing \$\{first\}–\$\{last\} of \$\{result\.page\.total\}/);
+  assert.doesNotMatch(app, /repositoryProofGraph\.claims\.filter\(/);
+});
+
+test("the selected Aperta appearance is shared with osx-components", async () => {
+  const root = join(import.meta.dirname, "..");
+  const app = await readFile(join(root, "dashboard/src/App.vue"), "utf8");
+  assert.match(app, /:data-osx-theme="theme === 'panther' \? 'panther' : theme === 'plain' \? 'graphite' : 'aqua'"/);
+});
+
 test("understanding evidence cannot overflow its grid card", async () => {
   const root = join(import.meta.dirname, "..");
   const app = await readFile(join(root, "dashboard/src/App.vue"), "utf8");

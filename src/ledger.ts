@@ -1,7 +1,7 @@
-import { appendFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import type { ApertaConfig, BaseEvent, LedgerEvent } from "./types.ts";
+import type { ApertaConfig, BaseEvent, DiffEvent, LedgerEvent } from "./types.ts";
 import { initializePrivateStorage, privateCachePath, privateProjectDir } from "./storage.ts";
 
 export const LEDGER_FILE = "ledger.jsonl";
@@ -45,6 +45,9 @@ export const defaultConfig: ApertaConfig = {
     lineThreshold: 50,
     confidenceThreshold: 2,
   },
+  review: {
+    ignorePatterns: [],
+  },
 };
 
 export async function initializeStore(root: string): Promise<boolean> {
@@ -54,7 +57,31 @@ export async function initializeStore(root: string): Promise<boolean> {
 export async function readConfig(root: string): Promise<ApertaConfig> {
   await initializeStore(root);
   const raw = await readFile(join(privateProjectDir(root), "config.json"), "utf8");
-  return { ...defaultConfig, ...JSON.parse(raw), gate: { ...defaultConfig.gate, ...JSON.parse(raw).gate } };
+  const parsed = JSON.parse(raw) as Partial<ApertaConfig>;
+  const review = { ...defaultConfig.review, ...parsed.review };
+  return { ...defaultConfig, ...parsed, gate: { ...defaultConfig.gate, ...parsed.gate }, review: { ignorePatterns: normalizeReviewIgnorePatterns(review.ignorePatterns) } };
+}
+
+export function normalizeReviewIgnorePatterns(input: unknown): string[] {
+  if (!Array.isArray(input)) throw new Error("Review ignore patterns must be a list");
+  const patterns = [...new Set(input.map((value) => typeof value === "string" ? value.trim() : "").filter(Boolean))];
+  if (patterns.length > 24) throw new Error("Use no more than 24 review ignore patterns");
+  for (const pattern of patterns) {
+    if (pattern.length > 240) throw new Error("Review ignore patterns must be 240 characters or fewer");
+    try { new RegExp(pattern, "u"); }
+    catch { throw new Error(`Invalid review ignore regex: ${pattern}`); }
+  }
+  return patterns;
+}
+
+export async function saveReviewIgnorePatterns(root: string, input: unknown): Promise<string[]> {
+  const ignorePatterns = normalizeReviewIgnorePatterns(input);
+  const config = await readConfig(root);
+  const file = join(privateProjectDir(root), "config.json");
+  const temporary = join(privateProjectDir(root), `config.${process.pid}.tmp`);
+  await writeFile(temporary, `${JSON.stringify({ ...config, review: { ignorePatterns } }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  await rename(temporary, file);
+  return ignorePatterns;
 }
 
 export async function readLedger(root: string): Promise<LedgerEvent[]> {
@@ -101,6 +128,30 @@ export async function appendEvents(root: string, events: LedgerEvent[]): Promise
       return JSON.stringify(stored);
     });
     await appendFile(file, `${lines.join("\n")}\n`, "utf8");
+  });
+}
+
+export async function appendDiffEventIfNew(root: string, diff: DiffEvent): Promise<{ diff: DiffEvent; inserted: boolean }> {
+  await initializeStore(root);
+  validateEvent(diff);
+  return withLedgerLock(root, async () => {
+    const file = join(privateProjectDir(root), LEDGER_FILE);
+    const raw = await readFile(file, "utf8");
+    const lines = raw.split("\n").filter(Boolean);
+    for (const line of lines) {
+      const event = JSON.parse(line) as StoredEvent;
+      validateEvent(event);
+      if (event.kind === "diff" && diff.fingerprint && event.fingerprint === diff.fingerprint) {
+        return { diff: publicEvent(event) as DiffEvent, inserted: false };
+      }
+    }
+    const last = lines.at(-1);
+    let previous = "";
+    if (last) { const parsed = JSON.parse(last) as StoredEvent; validateEvent(parsed); previous = parsed._hash ?? ""; }
+    const unsigned = { ...diff, _prevHash: previous } as Omit<StoredEvent, "_hash">;
+    const stored = { ...unsigned, _hash: digest(unsigned) } as StoredEvent;
+    await appendFile(file, `${JSON.stringify(stored)}\n`, "utf8");
+    return { diff, inserted: true };
   });
 }
 

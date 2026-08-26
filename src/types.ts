@@ -142,6 +142,9 @@ export interface ApertaConfig {
   ratingTimeoutSeconds: number;
   confidenceHalfLifeDays: number;
   gate: GateConfig;
+  review: {
+    ignorePatterns: string[];
+  };
 }
 
 export interface HarnessEvent {

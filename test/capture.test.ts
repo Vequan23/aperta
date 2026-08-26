@@ -24,3 +24,15 @@ test("stores patch evidence and rejects duplicate snapshots", async () => {
   assert.match(await readDiffEvidence(root, first.diff.id), /feature = true/);
   assert.equal((await readLedger(root)).filter((event) => event.kind === "diff").length, 1);
 });
+
+test("serializes concurrent captures of the same fingerprint", async () => {
+  const root = await mkdtemp(join(tmpdir(), "aperta-capture-race-"));
+  await exec("git", ["init", "-q", root]);
+  await initializeStore(root);
+  await writeFile(join(root, "feature.ts"), "export const feature = true;\n");
+  const snapshot = await captureWorkingDiff(root);
+  const results = await Promise.all(Array.from({ length: 8 }, () => recordSnapshotDiff(root, snapshot, { authorship: "ai", model: "test-model" })));
+  assert.equal(results.filter((result) => !result.duplicate).length, 1);
+  assert.equal(new Set(results.map((result) => result.diff.id)).size, 1);
+  assert.equal((await readLedger(root)).filter((event) => event.kind === "diff").length, 1);
+});

@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { appendEvent, initializeStore, readLedger, writeDiffEvidence } from "../src/ledger.ts";
+import { appendEvent, initializeStore, readConfig, readLedger, saveReviewIgnorePatterns, writeDiffEvidence } from "../src/ledger.ts";
 import { loadDashboardState, loadOwnershipBrief, recordOwnershipReview, recordQueueDisposition } from "../src/dashboard-data.ts";
 
 const exec = promisify(execFile);
@@ -79,6 +79,27 @@ test("review queue shows the newest change first", async () => {
   await appendEvent(root, { ...base, id: newerId, ts: "2026-08-22T14:35:00.000Z", kind: "diff", authorship: "unknown", files: [{ path: "src/Newer.java", added: 1, removed: 0, hunks: 1 }] });
   const state = await loadDashboardState(root);
   assert.deepEqual(state.queue.map((item) => item.diffId), [newerId, diffId]);
+});
+
+test("review regexes hide queue noise without deleting captured evidence", async () => {
+  const root = await fixture();
+  await saveReviewIgnorePatterns(root, [String.raw`(^|/)src/test/`, String.raw`(^|/)package-lock\.json$`]);
+  const state = await loadDashboardState(root);
+  assert.deepEqual(state.reviewSettings.ignorePatterns, [String.raw`(^|/)src/test/`, String.raw`(^|/)package-lock\.json$`]);
+  assert.deepEqual(state.queue[0]?.files.map((file) => file.path), ["src/security/AuthController.java"]);
+  assert.equal(state.queue[0]?.ignoredFileCount, 1);
+  assert.equal(state.diffs[0]?.files.length, 2);
+  assert.equal(state.sessions[0]?.files.length, 2);
+
+  await saveReviewIgnorePatterns(root, [String.raw`^src/`]);
+  assert.equal((await loadDashboardState(root)).queue.length, 0);
+});
+
+test("invalid review regexes fail without replacing the saved filters", async () => {
+  const root = await fixture();
+  await saveReviewIgnorePatterns(root, [String.raw`\.lock$`]);
+  await assert.rejects(() => saveReviewIgnorePatterns(root, ["["]), /Invalid review ignore regex/);
+  assert.deepEqual((await readConfig(root)).review.ignorePatterns, [String.raw`\.lock$`]);
 });
 
 test("consolidates older fully-overlapped captures into the latest review unit", async () => {

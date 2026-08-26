@@ -31,7 +31,11 @@ function apertaApi(): Plugin {
 
 export default defineConfig({
   root: resolve(import.meta.dirname),
-  plugins: [vue(), apertaApi()],
+  plugins: [vue({
+    template: {
+      compilerOptions: { isCustomElement: (tag) => tag.startsWith("osx-") },
+    },
+  }), apertaApi()],
   build: { outDir: "dist", emptyOutDir: true },
   server: {
     host: "127.0.0.1",
