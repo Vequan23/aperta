@@ -1,14 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
 import { promisify } from "node:util";
-import { applyAgentRun, buildAgentTranscriptPrompt, externalRuntimeArgs, externalRuntimeFailureDiagnostic, listAgentConversations, MAX_AGENT_INPUT_CHARS, normalizeExternalRuntimeEvent, runCursorAgent, runModelAgent, saveAgentUnderstanding } from "../src/agent-harness.ts";
+import { AgentVError, type RunProvenance } from "@vraxis/agent-v";
+import { applyAgentRun, buildAgentTranscriptPrompt, classifyAgentError, listAgentConversations, MAX_AGENT_INPUT_CHARS, runExternalAgent, runModelAgent, saveAgentUnderstanding } from "../src/agent-harness.ts";
+import type { ApertaCodingRuntime, ApertaRuntimeResult } from "../src/agent-runtime.ts";
 
 const exec = promisify(execFile);
+
+function fakeRuntime(handler: (input: Parameters<ApertaCodingRuntime["run"]>[0]) => Promise<string> | string): ApertaCodingRuntime {
+  const provenance: RunProvenance = { engineId: "local-cli", adapterStrategy: "test-runtime-v1", runtime: "codex", runtimeVersion: "test-1.0", model: "test-model" };
+  const status = async (kind: Parameters<ApertaCodingRuntime["inspect"]>[0]) => ({ runtimeId: kind, availability: "installed" as const, verification: "ready" as const, version: "test-1.0", detail: "Test runtime is ready.", adapterStrategy: "test-runtime-v1", capabilities: ["structured-output", "local-workspace", "read-only-workspace", "workspace-write"], executionSupported: true });
+  return {
+    inspect: status,
+    probe: status,
+    async run(input): Promise<ApertaRuntimeResult> {
+      await input.events?.emit({ type: "run.started", runId: input.runId, timestamp: new Date().toISOString(), scope: { tenantId: "local", projectId: input.projectId, principalId: "test", roles: ["owner"], permissions: ["workspace:read"], dataClassification: "confidential" }, provenance });
+      await input.events?.emit({ type: "model.started", runId: input.runId, timestamp: new Date().toISOString(), scope: { tenantId: "local", projectId: input.projectId, principalId: "test", roles: ["owner"], permissions: ["workspace:read"], dataClassification: "confidential" }, step: 1 });
+      const summary = await handler(input);
+      return { summary, provenance, durationMs: 5, activityCount: 2, attempts: 1 };
+    },
+  };
+}
 
 test("agent context is compacted under an explicit provider-neutral input budget", () => {
   const files = Array.from({ length: 3_000 }, (_, index) => `src/generated/deep/path/Component${index}.java`);
@@ -22,23 +39,23 @@ test("agent context is compacted under an explicit provider-neutral input budget
   assert.match(JSON.stringify(parsed.recentToolResults.at(-1)), /context characters compacted/);
 });
 
-test("Cursor runtime streams actions into Aperta and edits only the disposable worktree", async () => {
+test("agent-v runtime results stay isolated and retain provenance", async () => {
   const root = await mkdtemp(join(tmpdir(), "aperta-cursor-runtime-"));
   await exec("git", ["init", "-q"], { cwd: root });
   await exec("git", ["config", "user.email", "test@aperta.local"], { cwd: root });
   await exec("git", ["config", "user.name", "Aperta Test"], { cwd: root });
   await writeFile(join(root, "app.txt"), "before\n");
   await exec("git", ["add", "app.txt"], { cwd: root }); await exec("git", ["commit", "-qm", "initial"], { cwd: root });
-  const fakeCursor = join(root, "fake-cursor-agent");
-  await writeFile(fakeCursor, `#!/usr/bin/env node\nconst fs=require("node:fs");fs.writeFileSync("app.txt","after\\n");console.log(JSON.stringify({type:"system",subtype:"init",model:"cursor-test"}));console.log(JSON.stringify({type:"tool_call",subtype:"completed",tool_name:"write",path:"app.txt",status:"success"}));console.log(JSON.stringify({type:"result",subtype:"success",result:"Updated the requested file."}));\n`);
-  await chmod(fakeCursor, 0o755);
-  const run = await runCursorAgent(root, "Update the fixture through the Cursor runtime.", { kind: "cursor", model: "cursor-test", command: fakeCursor });
+  const runtimeEngine = fakeRuntime(async ({ workspace }) => { await writeFile(join(workspace, "app.txt"), "after\n"); return "Updated the requested file."; });
+  const run = await runExternalAgent(root, "Update the fixture through the coding runtime.", { kind: "codex", model: "test-model", command: "codex" }, undefined, { runtimeEngine });
   assert.equal(await readFile(join(root, "app.txt"), "utf8"), "before\n");
   assert.equal(run.status, "ready");
-  assert.equal(run.provider, "cursor");
+  assert.equal(run.provider, "codex");
   assert.equal(run.files[0]?.path, "app.txt");
-  assert.equal(run.actions.some((action) => action.action === "write"), true);
+  assert.equal(run.actions.some((action) => action.action === "runtime"), true);
   assert.match(run.summary ?? "", /Updated the requested file/);
+  assert.equal(run.provenance?.adapterStrategy, "test-runtime-v1");
+  assert.equal(run.provenance?.runtimeVersion, "test-1.0");
 });
 
 test("external runtime answers skip verification and store a readable headline", async () => {
@@ -49,10 +66,8 @@ test("external runtime answers skip verification and store a readable headline",
   await writeFile(join(root, "app.ts"), "export const answer = 41;\n");
   await writeFile(join(root, "package.json"), `${JSON.stringify({ scripts: { test: "node -e \"console.error('SHOULD_NOT_RUN');process.exit(1)\"" } }, null, 2)}\n`);
   await exec("git", ["add", "app.ts", "package.json"], { cwd: root }); await exec("git", ["commit", "-qm", "initial"], { cwd: root });
-  const fakeClaude = join(root, "fake-claude-agent");
-  await writeFile(fakeClaude, `#!/usr/bin/env node\nconsole.log(JSON.stringify({type:"result",subtype:"success",result:"### Architecture\\n**Answer:** The exported value is 41. " + "Explanation ".repeat(40)}));\n`);
-  await chmod(fakeClaude, 0o755);
-  const run = await runCursorAgent(root, "Explain the exported value without changing the repository.", { kind: "claude", command: fakeClaude });
+  const runtimeEngine = fakeRuntime(() => `### Architecture\n**Answer:** The exported value is 41. ${"Explanation ".repeat(40)}`);
+  const run = await runExternalAgent(root, "Explain the exported value without changing the repository.", { kind: "claude", model: "", command: "claude" }, undefined, { runtimeEngine });
   assert.equal(run.status, "no-changes");
   assert.equal(run.verification.baseline, undefined);
   assert.equal(run.actions.some((action) => action.action === "baseline" || action.action === "verify"), false);
@@ -67,10 +82,8 @@ test("read-only skills discard external runtime mutations", async () => {
   await exec("git", ["config", "user.name", "Aperta Test"], { cwd: root });
   await writeFile(join(root, "app.ts"), "export const answer = 41;\n");
   await exec("git", ["add", "app.ts"], { cwd: root }); await exec("git", ["commit", "-qm", "initial"], { cwd: root });
-  const fakeClaude = join(root, "fake-claude-agent");
-  await writeFile(fakeClaude, `#!/usr/bin/env node\nrequire("node:fs").writeFileSync("app.ts","export const answer = 99;\\n");console.log(JSON.stringify({type:"result",subtype:"success",result:"Explained the export."}));\n`);
-  await chmod(fakeClaude, 0o755);
-  await assert.rejects(() => runCursorAgent(root, "Explain how the exported answer works.", { kind: "claude", command: fakeClaude }), /read-only.*attempted to modify/i);
+  const runtimeEngine = fakeRuntime(async ({ workspace }) => { await writeFile(join(workspace, "app.ts"), "export const answer = 99;\n"); return "Explained the export."; });
+  await assert.rejects(() => runExternalAgent(root, "Explain how the exported answer works.", { kind: "claude", model: "", command: "claude" }, undefined, { runtimeEngine }), /read-only.*attempted to modify/i);
   assert.equal(await readFile(join(root, "app.ts"), "utf8"), "export const answer = 41;\n");
 });
 
@@ -82,10 +95,8 @@ test("external runtimes use Aperta for requested checks without receiving raw lo
   await writeFile(join(root, "app.ts"), "export const answer = 41;\n");
   await writeFile(join(root, "package.json"), `${JSON.stringify({ scripts: { test: "node -e \"console.error('PRIVATE_TEST_DIAGNOSTIC');process.exit(1)\"" } }, null, 2)}\n`);
   await exec("git", ["add", "app.ts", "package.json"], { cwd: root }); await exec("git", ["commit", "-qm", "initial"], { cwd: root });
-  const fakeClaude = join(root, "fake-claude-agent");
-  await writeFile(fakeClaude, `#!/usr/bin/env node\nconst prompt=process.argv.join(" ");const safe=prompt.includes('"status":"failed"')&&!prompt.includes("PRIVATE_TEST_DIAGNOSTIC");console.log(JSON.stringify({type:"result",subtype:"success",result:safe?"Aperta ran the tests and recorded a failure. Open Checks for the local output.":"Unsafe or missing verification context."}));\n`);
-  await chmod(fakeClaude, 0o755);
-  const run = await runCursorAgent(root, "Run the tests and tell me whether they pass.", { kind: "claude", command: fakeClaude });
+  const runtimeEngine = fakeRuntime(({ prompt }) => prompt.includes('"status":"failed"') && !prompt.includes("PRIVATE_TEST_DIAGNOSTIC") ? "Aperta ran the tests and recorded a failure. Open Checks for the local output." : "Unsafe or missing verification context.");
+  const run = await runExternalAgent(root, "Run the tests and tell me whether they pass.", { kind: "claude", model: "", command: "claude" }, undefined, { runtimeEngine });
   assert.equal(run.status, "no-changes");
   assert.equal(run.verification.baseline?.status, "failed");
   assert.equal(run.actions.some((action) => action.action === "verify"), true);
@@ -109,10 +120,8 @@ test("external runtimes receive an observed localhost service status", async () 
     await exec("git", ["config", "user.name", "Aperta Test"], { cwd: root });
     await writeFile(join(root, "application.yml"), `app:\n  redis:\n    port: \${REDIS_PORT:${address.port}}\n`);
     await exec("git", ["add", "application.yml"], { cwd: root }); await exec("git", ["commit", "-qm", "initial"], { cwd: root });
-    const fakeClaude = join(root, "fake-claude-agent");
-    await writeFile(fakeClaude, `#!/usr/bin/env node\nconst prompt=process.argv.join(" ");const observed=prompt.includes('"label":"Redis status"')&&prompt.includes('"status":"reachable"');console.log(JSON.stringify({type:"result",subtype:"success",result:observed?"Redis is accepting local connections on the configured port.":"No live status was provided."}));\n`);
-    await chmod(fakeClaude, 0o755);
-    const run = await runCursorAgent(root, "Is Redis currently running and reachable?", { kind: "claude", command: fakeClaude });
+    const runtimeEngine = fakeRuntime(({ prompt }) => prompt.includes('"label":"Redis status"') && prompt.includes('"status":"reachable"') ? "Redis is accepting local connections on the configured port." : "No live status was provided.");
+    const run = await runExternalAgent(root, "Is Redis currently running and reachable?", { kind: "claude", model: "", command: "claude" }, undefined, { runtimeEngine });
     assert.equal(run.status, "no-changes");
     assert.equal(run.actions.some((action) => action.action === "probe" && action.evidenceStatus === "reachable"), true);
     assert.equal(run.capabilities[0]?.kind, "service-probe");
@@ -131,43 +140,10 @@ test("external runtimes receive an observed localhost service status", async () 
   }
 });
 
-test("external runtime commands request structured output and keep verification inside Aperta", () => {
-  const claude = externalRuntimeArgs({ kind: "claude", model: "sonnet", command: "claude" }, "/tmp/work", "change it");
-  assert.ok(claude.includes("stream-json"));
-  assert.ok(claude.includes("Read,Edit,Write,Glob,Grep"));
-  assert.equal(claude.includes("Bash"), false);
-  const opencode = externalRuntimeArgs({ kind: "opencode", model: "deepseek/deepseek-v4-pro", command: "opencode" }, "/tmp/work", "change it");
-  assert.deepEqual(opencode.slice(0, 5), ["run", "--format", "json", "--pure", "--auto"]);
-  assert.ok(opencode.includes("/tmp/work"));
-});
-
-test("external runtime failures preserve stdout-only provider diagnostics", () => {
-  const event = JSON.stringify({ type: "error", error: { data: { message: "Provided authentication token is expired.", statusCode: 401 } } });
-  const parsed = JSON.parse(event);
-  const summary = parsed.error.data.message;
-  assert.equal(externalRuntimeFailureDiagnostic("", summary, event), "Provided authentication token is expired.");
-  assert.match(externalRuntimeFailureDiagnostic("", "", "plain stdout failure"), /plain stdout failure/);
-});
-
-test("Claude stream events become readable, repository-relative activity", () => {
-  const workspace = "/private/var/folders/example/T/aperta-agent-CkxXTw";
-  const event = {
-    type: "assistant",
-    message: {
-      model: "claude-opus-4-7",
-      content: [{ type: "tool_use", name: "Read", input: { file_path: `${workspace}/src/main/java/UserRepository.java` } }],
-      usage: { cache_read_input_tokens: 19_304, output_tokens: 28 },
-    },
-  };
-  const action = normalizeExternalRuntimeEvent(event, workspace);
-  assert.deepEqual(action, {
-    action: "read",
-    detail: "Inspecting src/main/java/UserRepository.java.",
-    path: "src/main/java/UserRepository.java",
-    status: "success",
-  });
-  assert.doesNotMatch(JSON.stringify(action), /tokens|private\/var|claude-opus/);
-  assert.equal(normalizeExternalRuntimeEvent({ type: "result", result: "Done" }, workspace), null);
+test("agent-v failure codes map into Aperta reliability classes", () => {
+  assert.equal(classifyAgentError(new AgentVError("authentication-required", "Authentication is not ready.")), "ProviderError");
+  assert.equal(classifyAgentError(new AgentVError("timeout", "The runtime exceeded its bound.")), "Timeout");
+  assert.equal(classifyAgentError(new AgentVError("unsupported-capability", "Read-only access cannot be enforced.")), "InvalidArguments");
 });
 
 test("failed verification evidence survives into the next conversation turn", () => {

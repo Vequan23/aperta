@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { activeModelConfig, activateModelProfile, assignModelRole, inspectAgentRuntime, inspectModelProvider, publicModelSettings, saveModelProfile } from "../src/settings.ts";
+import { activeModelConfig, activateModelProfile, assignModelRole, inspectAgentRuntime, inspectModelProvider, publicModelSettings, saveAgentRuntime, saveModelProfile } from "../src/settings.ts";
+import type { ApertaCodingRuntime } from "../src/agent-runtime.ts";
 
 test("model profiles remain global and contain no credential material", async () => {
   const home = await mkdtemp(join(tmpdir(), "aperta-settings-"));
@@ -28,12 +29,31 @@ test("model profiles remain global and contain no credential material", async ()
   }
 });
 
-test("agent runtimes distinguish Aperta from an unavailable Cursor CLI", async () => {
-  const aperta = await inspectAgentRuntime({ kind: "aperta", model: "", command: "cursor-agent" });
-  const cursor = await inspectAgentRuntime({ kind: "cursor", model: "", command: "cursor-agent-that-does-not-exist" });
-  assert.equal(aperta.available, true);
-  assert.equal(cursor.available, false);
-  assert.match(cursor.detail, /not installed|not on PATH/i);
+test("agent runtimes distinguish installation from authenticated readiness", async () => {
+  const home = await mkdtemp(join(tmpdir(), "aperta-runtime-settings-"));
+  const previous = process.env.APERTA_HOME;
+  process.env.APERTA_HOME = home;
+  let probes = 0;
+  const runtimeEngine: ApertaCodingRuntime = {
+    async inspect(kind) { return { runtimeId: kind, availability: kind === "cursor" ? "missing" : "installed", verification: "unverified", version: kind === "cursor" ? undefined : "test-1.0", detail: kind === "cursor" ? "Runtime is missing." : "Installed but unverified.", adapterStrategy: `${kind}-test-v1`, capabilities: kind === "cursor" ? ["local-workspace"] : ["structured-output", "local-workspace", "read-only-workspace", "workspace-write"], executionSupported: kind !== "cursor" }; },
+    async probe(kind) { probes++; return { runtimeId: kind, availability: "installed", verification: "ready", version: "test-1.0", checkedAt: new Date().toISOString(), detail: "Authenticated and schema-valid.", adapterStrategy: `${kind}-test-v1`, capabilities: ["structured-output", "local-workspace", "read-only-workspace", "workspace-write"], executionSupported: true }; },
+    async run() { throw new Error("not used"); },
+  };
+  try {
+    const aperta = await inspectAgentRuntime({ kind: "aperta", model: "", command: "" }, runtimeEngine);
+    const codex = await inspectAgentRuntime({ kind: "codex", model: "", command: "codex" }, runtimeEngine);
+    const cursor = await inspectAgentRuntime({ kind: "cursor", model: "", command: "cursor-agent" }, runtimeEngine);
+    assert.equal(aperta.available, true);
+    assert.equal(aperta.ready, true);
+    assert.equal(codex.available, true);
+    assert.equal(codex.ready, false);
+    assert.equal(cursor.available, false);
+    const activated = await saveAgentRuntime({ kind: "codex", model: "" }, runtimeEngine);
+    assert.equal(activated.ready, true);
+    assert.equal(probes, 1);
+  } finally {
+    if (previous === undefined) delete process.env.APERTA_HOME; else process.env.APERTA_HOME = previous;
+  }
 });
 
 test("provider inspection discovers models and verifies native tools", async () => {

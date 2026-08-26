@@ -144,11 +144,18 @@ Aperta intentionally separates these responsibilities:
 | Layer | Responsibility | Current support |
 | --- | --- | --- |
 | **Model APIs** | Planning, reasoning, explanation, coaching | OpenAI, Anthropic, Google Gemini, DeepSeek, OpenRouter, Groq, Ollama, LM Studio, OpenAI-compatible endpoints |
-| **Agent runtimes** | Repository inspection, edits, and tool execution | Aperta Native, Claude Code, OpenCode, Cursor Agent |
+| **Agent runtimes** | Repository inspection, edits, and tool execution | Aperta Native, Codex CLI, Claude Code, OpenCode; Cursor is discoverable but structured execution is not yet supported |
 | **Aperta** | Skill selection, capabilities, isolation, verification, promotion, evidence, and learning | Local trust and evidence layer |
 
 Changing the model or runtime never gives it authority to declare its own work
 correct, proven, or understood.
+
+External CLI mechanics are provided by `@vraxis/agent-v`: runtime discovery,
+bounded readiness probes, structured execution, normalized failures, and run
+provenance. Aperta still owns the product-specific safety boundary—skill
+selection, disposable worktrees, checks, evidence, human review, and promotion.
+An installed CLI is not shown as ready until its explicit probe succeeds, and
+every external run records the runtime version and adapter strategy used.
 
 ## Private by architecture
 

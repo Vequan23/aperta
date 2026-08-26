@@ -261,7 +261,7 @@ async function startDashboardServer(root: string, port: number, shouldOpen: bool
           const runtime = await activeAgentRuntime();
           const config = runtime.kind === "aperta" ? await runtimeCoachConfig() : null;
           if (runtime.kind === "aperta" && !config) throw new Error("Configure and activate a builder model profile before starting an agent run");
-          if (runtime.kind !== "aperta" && !runtime.available) throw new Error(`${runtime.detail} Open Settings to choose another runtime or finish its installation.`);
+          if (runtime.kind !== "aperta" && !runtime.ready) throw new Error(`${runtime.detail} Open Settings to verify the runtime or choose another one.`);
           const conversations = await listAgentConversations(project.root);
           const conversation = body.conversationId ? conversations.find((candidate) => candidate.id === body.conversationId) : undefined;
           if (body.conversationId && !conversation) throw new Error("Agent conversation not found");

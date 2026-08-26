@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@typescript/typescript6": "^6.0.2",
+    "@vraxis/agent-v": "^0.5.2",
     "@vue/compiler-sfc": "^3.5.41",
     "typescript": "^7.0.2"
   },

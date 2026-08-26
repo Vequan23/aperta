@@ -425,6 +425,9 @@ type HarnessHealth = {
     key: string;
     provider: string;
     model: string;
+    runtime: string | null;
+    runtimeVersion: string | null;
+    adapterStrategy: string | null;
     runs: number;
     completionRate: number;
     firstPassRate: number | null;
@@ -450,6 +453,9 @@ type HarnessHealth = {
     ts: string;
     provider: string;
     model: string;
+    runtime: string | null;
+    runtimeVersion: string | null;
+    adapterStrategy: string | null;
     intent: string;
     status: string;
     firstPass: boolean;
@@ -712,12 +718,19 @@ type ProviderInspection = {
   capabilities: NonNullable<ModelProfile["capabilities"]>;
 };
 type AgentRuntimeStatus = {
-  kind: "aperta" | "cursor" | "claude" | "opencode";
+  kind: "aperta" | "codex" | "cursor" | "claude" | "opencode";
   model: string;
   command: string;
   available: boolean;
+  ready: boolean;
+  supported: boolean;
+  verification: "unverified" | "ready" | "failed" | "not-applicable";
   version?: string;
+  checkedAt?: string;
   detail: string;
+  failureCode?: string;
+  adapterStrategy: string;
+  capabilities: string[];
 };
 type ModelSettings = {
   activeCoachProfileId: string | null;
@@ -774,7 +787,7 @@ const agentRuns = ref<AgentRun[]>([]);
 const agentConversations = ref<AgentConversation[]>([]);
 const agentStatus = ref<CoachStatus | null>(null);
 const agentRuntimeStatus = ref<AgentRuntimeStatus | null>(null);
-const agentExecutionReady = computed(() => agentRuntimeStatus.value?.kind === "aperta" ? Boolean(agentStatus.value?.enabled) : Boolean(agentRuntimeStatus.value?.available));
+const agentExecutionReady = computed(() => agentRuntimeStatus.value?.kind === "aperta" ? Boolean(agentStatus.value?.enabled) : Boolean(agentRuntimeStatus.value?.ready));
 const agentEngineSummary = computed(() => {
   const runtime = agentRuntimeStatus.value;
   if (!runtime) return "Loading execution engine…";
@@ -1803,7 +1816,7 @@ async function loadSettings() {
     if (!response.ok) throw new Error(body.error ?? "Could not load settings");
     modelSettings.value = body;
     agentRuntimeForm.value = {
-      kind: ["cursor", "claude", "opencode"].includes(body.agentRuntime?.kind) ? body.agentRuntime.kind : "aperta",
+      kind: ["codex", "cursor", "claude", "opencode"].includes(body.agentRuntime?.kind) ? body.agentRuntime.kind : "aperta",
       model: typeof body.agentRuntime?.model === "string" ? body.agentRuntime.model : "",
     };
   } catch (reason) {
@@ -1882,13 +1895,13 @@ async function saveAgentRuntime() {
   }
 }
 function agentRuntimeLabel(kind: AgentRuntimeStatus["kind"]) {
-  return kind === "cursor" ? "Cursor Agent" : kind === "claude" ? "Claude Code" : kind === "opencode" ? "OpenCode" : "Aperta Native";
+  return kind === "codex" ? "Codex CLI" : kind === "cursor" ? "Cursor Agent" : kind === "claude" ? "Claude Code" : kind === "opencode" ? "OpenCode" : "Aperta Native";
 }
 function agentRuntimeSubtitle(kind: AgentRuntimeStatus["kind"]) {
-  return kind === "aperta" ? "Bounded native tool loop" : "External CLI runtime";
+  return kind === "aperta" ? "Bounded native tool loop" : "agent-v local CLI adapter";
 }
 function agentRuntimeMark(kind: AgentRuntimeStatus["kind"]) {
-  return kind === "cursor" ? "C" : kind === "claude" ? "A" : kind === "opencode" ? "O" : "α";
+  return kind === "codex" ? "X" : kind === "cursor" ? "C" : kind === "claude" ? "A" : kind === "opencode" ? "O" : "α";
 }
 async function activateProfile(id: string) {
   await settingsAction({ action: "activate", id });
@@ -3709,7 +3722,7 @@ onUnmounted(() => {
                     >
                       <strong
                         ><small>{{ model.provider }}</small
-                        >{{ model.model }}</strong
+                        >{{ model.model }}<small v-if="model.adapterStrategy" class="runtime-provenance">{{ model.runtime }} {{ model.runtimeVersion || 'version unknown' }} · {{ model.adapterStrategy }}</small></strong
                       ><span>{{ metricPercent(model.completionRate) }}</span
                       ><span>{{ metricPercent(model.firstPassRate) }}</span
                       ><span>{{ metricPercent(model.repairRate) }}</span
@@ -3802,6 +3815,7 @@ onUnmounted(() => {
                           >{{ run.provider }} · {{ run.model }} ·
                           {{ new Date(run.ts).toLocaleString() }}</small
                         >
+                        <small v-if="run.adapterStrategy" class="runtime-provenance">{{ run.runtime }} {{ run.runtimeVersion || 'version unknown' }} · {{ run.adapterStrategy }}</small>
                       </div>
                       <div class="run-signals">
                         <em v-if="run.firstPass">first pass</em
@@ -4900,7 +4914,7 @@ onUnmounted(() => {
                 >
                   <span class="runtime-mark">{{ agentRuntimeMark(runtime.kind) }}</span>
                   <span><strong>{{ agentRuntimeLabel(runtime.kind) }}</strong><small>{{ agentRuntimeSubtitle(runtime.kind) }}</small></span>
-                  <em :class="{ ready: runtime.available }">{{ runtime.available ? (runtime.kind === 'aperta' ? 'READY' : 'INSTALLED') : 'SETUP NEEDED' }}</em>
+                  <em :class="{ ready: runtime.ready }">{{ runtime.ready ? 'READY' : !runtime.supported ? 'UNSUPPORTED' : runtime.available ? runtime.verification === 'failed' ? 'CHECK FAILED' : 'INSTALLED' : 'SETUP NEEDED' }}</em>
                   <p>{{ runtime.detail }}</p>
                 </button>
               </div>
@@ -4921,16 +4935,16 @@ onUnmounted(() => {
               <div v-if="agentRuntimeForm.kind !== 'aperta'" class="cursor-runtime-config">
                 <label>{{ agentRuntimeLabel(agentRuntimeForm.kind) }} model <input v-model="agentRuntimeForm.model" :placeholder="agentRuntimeForm.kind === 'opencode' ? 'Optional: provider/model' : 'Optional: use runtime default'" /></label>
                 <p>Passed directly to the selected CLI. The runtime manages authentication; Aperta never stores its credentials.</p>
-                <p v-if="!modelSettings?.agentRuntimes.find((runtime) => runtime.kind === agentRuntimeForm.kind)?.available" class="runtime-install-note">
-                  Install and authenticate {{ agentRuntimeLabel(agentRuntimeForm.kind) }}, refresh Settings, then activate it here.
+                <p v-if="!modelSettings?.agentRuntimes.find((runtime) => runtime.kind === agentRuntimeForm.kind)?.ready" class="runtime-install-note">
+                  {{ modelSettings?.agentRuntimes.find((runtime) => runtime.kind === agentRuntimeForm.kind)?.detail ?? `Install ${agentRuntimeLabel(agentRuntimeForm.kind)} to continue.` }}
                 </p>
               </div>
               <button
                 class="save-runtime"
                 type="button"
-                :disabled="settingsSaving || (agentRuntimeForm.kind !== 'aperta' && !modelSettings?.agentRuntimes.find((runtime) => runtime.kind === agentRuntimeForm.kind)?.available)"
+                :disabled="settingsSaving || (agentRuntimeForm.kind !== 'aperta' && (!modelSettings?.agentRuntimes.find((runtime) => runtime.kind === agentRuntimeForm.kind)?.available || !modelSettings?.agentRuntimes.find((runtime) => runtime.kind === agentRuntimeForm.kind)?.supported))"
                 @click="saveAgentRuntime"
-              >{{ settingsSaving ? 'Saving…' : `Use ${agentRuntimeLabel(agentRuntimeForm.kind)}` }}</button>
+              >{{ settingsSaving ? 'Verifying…' : agentRuntimeForm.kind !== 'aperta' && !modelSettings?.agentRuntimes.find((runtime) => runtime.kind === agentRuntimeForm.kind)?.ready ? `Verify & use ${agentRuntimeLabel(agentRuntimeForm.kind)}` : `Use ${agentRuntimeLabel(agentRuntimeForm.kind)}` }}</button>
             </section>
             <section class="intelligence-routing" aria-labelledby="intelligence-routing-title">
               <header>

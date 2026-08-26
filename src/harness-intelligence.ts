@@ -6,11 +6,11 @@ export interface HarnessHealthReport {
   generatedAt: string;
   privacy: string;
   summary: { runs: number; completed: number; firstPassRate: number | null; repairRate: number | null; promotionRate: number | null; keepRate: number | null; keptLines: number; sampledLines: number; toolReliability: number | null; averageProviderLatencyMs: number | null };
-  models: Array<{ key: string; provider: string; model: string; runs: number; completionRate: number; firstPassRate: number | null; repairRate: number | null; toolReliability: number | null; averageProviderLatencyMs: number | null }>;
+  models: Array<{ key: string; provider: string; model: string; runtime: string | null; runtimeVersion: string | null; adapterStrategy: string | null; runs: number; completionRate: number; firstPassRate: number | null; repairRate: number | null; toolReliability: number | null; averageProviderLatencyMs: number | null }>;
   tools: Array<{ action: string; calls: number; errors: number; reliability: number; averageLatencyMs: number | null }>;
   errors: Array<{ class: AgentErrorClass; count: number; share: number }>;
   signals: Array<{ level: "healthy" | "warning" | "critical"; title: string; detail: string }>;
-  recent: Array<{ id: string; ts: string; provider: string; model: string; intent: string; status: string; firstPass: boolean; repaired: boolean; promoted: boolean; errors: AgentErrorClass[] }>;
+  recent: Array<{ id: string; ts: string; provider: string; model: string; runtime: string | null; runtimeVersion: string | null; adapterStrategy: string | null; intent: string; status: string; firstPass: boolean; repaired: boolean; promoted: boolean; errors: AgentErrorClass[] }>;
 }
 
 function rate(numerator: number, denominator: number): number | null { return denominator ? numerator / denominator : null; }
@@ -64,7 +64,8 @@ function modelRows(runs: AgentRun[]) {
     const verified = records.filter((run) => run.verification.attempts.length), repairable = records.filter((run) => run.verification.attempts[0]?.status === "failed");
     const calls = records.flatMap((run) => run.actions.filter((action) => action.action !== "finish"));
     const providerLatencies = records.filter((run) => run.telemetry?.providerCalls).map((run) => run.telemetry.providerLatencyMs / run.telemetry.providerCalls);
-    return { key, provider: records[0].provider, model: records[0].model, runs: records.length, completionRate: rate(records.filter(completed).length, records.length) ?? 0, firstPassRate: rate(verified.filter(firstPass).length, verified.length), repairRate: rate(repairable.filter(repaired).length, repairable.length), toolReliability: rate(calls.filter((action) => action.status !== "error").length, calls.length), averageProviderLatencyMs: average(providerLatencies) };
+    const latestProvenance = records.find((run) => run.provenance)?.provenance;
+    return { key, provider: records[0].provider, model: records[0].model, runtime: latestProvenance?.runtime ?? null, runtimeVersion: latestProvenance?.runtimeVersion ?? null, adapterStrategy: latestProvenance?.adapterStrategy ?? null, runs: records.length, completionRate: rate(records.filter(completed).length, records.length) ?? 0, firstPassRate: rate(verified.filter(firstPass).length, verified.length), repairRate: rate(repairable.filter(repaired).length, repairable.length), toolReliability: rate(calls.filter((action) => action.status !== "error").length, calls.length), averageProviderLatencyMs: average(providerLatencies) };
   }).sort((a, b) => b.runs - a.runs);
 }
 
@@ -89,6 +90,6 @@ export async function buildHarnessHealth(root: string): Promise<HarnessHealthRep
     generatedAt: new Date().toISOString(), privacy: "Computed locally from private per-user run memory and current repository files. Raw prompts, source code, and credentials are not exported or stored in Git.",
     summary: { runs: runs.length, completed: runs.filter(completed).length, firstPassRate, repairRate: rate(repairable.filter(repaired).length, repairable.length), promotionRate: rate(runs.filter((run) => run.status === "applied").length, promotable.length), keepRate: keep.keepRate, keptLines: keep.keptLines, sampledLines: keep.sampledLines, toolReliability: reliability, averageProviderLatencyMs: average(providerLatencies) },
     models: modelRows(runs), tools, errors, signals,
-    recent: runs.slice(0, 12).map((run) => ({ id: run.id, ts: run.createdAt, provider: run.provider, model: run.model, intent: run.intent, status: run.status, firstPass: firstPass(run), repaired: repaired(run), promoted: run.status === "applied", errors: [...new Set((run.telemetry?.errors ?? []).map((error) => error.class))] })),
+    recent: runs.slice(0, 12).map((run) => ({ id: run.id, ts: run.createdAt, provider: run.provider, model: run.model, runtime: run.provenance?.runtime ?? null, runtimeVersion: run.provenance?.runtimeVersion ?? null, adapterStrategy: run.provenance?.adapterStrategy ?? null, intent: run.intent, status: run.status, firstPass: firstPass(run), repaired: repaired(run), promoted: run.status === "applied", errors: [...new Set((run.telemetry?.errors ?? []).map((error) => error.class))] })),
   };
 }

@@ -4,7 +4,6 @@ import { access, copyFile, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, normalize, sep } from "node:path";
-import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import type { CoachConfig } from "./coach.ts";
 import type { AgentRuntimeConfig } from "./settings.ts";
@@ -15,6 +14,8 @@ import { cleanExecutionOutput, safeEnvironment } from "./execution.ts";
 import { assertSkillAllowsAction, selectAgentSkill, skillPrompt, type AgentSkillContract } from "./skills.ts";
 import { privateCachePath } from "./storage.ts";
 import { initializeStore } from "./ledger.ts";
+import { agentVRuntime, eventAction, type ApertaCodingRuntime } from "./agent-runtime.ts";
+import type { RunProvenance } from "@vraxis/agent-v";
 
 const execFileAsync = promisify(execFile);
 export type AgentRunStatus = "running" | "verifying" | "ready" | "verification-failed" | "no-changes" | "applied" | "failed" | "canceled";
@@ -39,7 +40,7 @@ export interface AgentUnderstandingBrief { generatedAt: string; changedBehavior:
 export interface AgentRun {
   id: string; conversationId: string; turnIndex: number; repo: string; intent: string; status: AgentRunStatus; provider: string; model: string; createdAt: string; finishedAt?: string;
   baseTree?: string; resultTree?: string; summary?: string; files: Array<{ path: string; added: number; removed: number; hunks: number }>;
-  patch: string; actions: AgentActionRecord[]; capabilities: AgentCapabilityEvidence[]; skill: AgentSkillContract; verification: AgentVerification; contract: AgentExecutionContract; critique?: AgentCritique; promotion: AgentPromotionDecision; telemetry: AgentTelemetry; context: AgentContextBudget; evidenceGraph?: AgentEvidenceGraph; understanding?: AgentUnderstandingBrief; appliedAt?: string; error?: string;
+  patch: string; actions: AgentActionRecord[]; capabilities: AgentCapabilityEvidence[]; skill: AgentSkillContract; verification: AgentVerification; contract: AgentExecutionContract; critique?: AgentCritique; promotion: AgentPromotionDecision; telemetry: AgentTelemetry; context: AgentContextBudget; provenance?: RunProvenance; evidenceGraph?: AgentEvidenceGraph; understanding?: AgentUnderstandingBrief; appliedAt?: string; error?: string;
 }
 export interface AgentConversation { id: string; title: string; createdAt: string; updatedAt: string; runs: AgentRun[] }
 
@@ -172,7 +173,14 @@ function finalizeEvidence(run: AgentRun) {
 
 export function classifyAgentError(reason: unknown): AgentErrorClass {
   const error = reason instanceof Error ? reason : new Error(String(reason));
+  const failureCode = (reason as { code?: string } | null)?.code;
   const message = error.message.toLowerCase();
+  if (failureCode === "cancelled") return "UserAborted";
+  if (failureCode === "timeout") return "Timeout";
+  if (["authentication-required", "invocation-failed", "empty-response"].includes(failureCode ?? "")) return "ProviderError";
+  if (failureCode === "engine-unavailable") return "UnexpectedEnvironment";
+  if (["invalid-json", "output-invalid"].includes(failureCode ?? "")) return "InvalidModelOutput";
+  if (["permission-denied", "unsupported-capability", "configuration-invalid"].includes(failureCode ?? "")) return "InvalidArguments";
   if (error.name === "AbortError" || /\bcancel(?:ed|led)?\b|user aborted/.test(message)) return "UserAborted";
   if (/timed? out|timeout/.test(message)) return "Timeout";
   if (/older repository state|repository changed since|overwriting newer work|previous turn could not be restored|state conflict/.test(message)) return "StateConflict";
@@ -750,135 +758,51 @@ export async function runModelAgent(root: string, intent: string, config: CoachC
   } finally { for (const stop of serviceStops.reverse()) await stop(); if (workspace) await cleanupWorkspace(root, workspace, worktree); }
 }
 
-type ExternalRuntimeAction = { action: string; detail: string; path?: string; status?: "success" | "error" };
-
-function externalWorkspacePath(value: unknown, workspace: string): string | undefined {
-  if (typeof value !== "string" || !value.trim()) return undefined;
-  const path = value.replaceAll("\\", "/");
-  const root = workspace.replaceAll("\\", "/").replace(/\/$/, "");
-  if (path === root) return ".";
-  if (path.startsWith(`${root}/`)) return path.slice(root.length + 1);
-  return path.match(/\/aperta-agent-[^/]+\/(.+)$/)?.[1] ?? path;
-}
-
-function externalToolDetail(tool: string, path: string | undefined, input: Record<string, unknown>): string {
-  const target = path ? ` ${path}` : "";
-  if (/^(?:read|view|open)$/.test(tool)) return `Inspecting${target || " a repository file"}.`;
-  if (/^(?:edit|write|patch|apply_patch)$/.test(tool)) return `Updating${target || " repository content"}.`;
-  if (/^(?:glob|grep|search|find)$/.test(tool)) {
-    const query = [input.pattern, input.query, input.glob].find((value) => typeof value === "string");
-    return query ? `Searching the repository for ${String(query).slice(0, 180)}.` : "Searching the repository.";
-  }
-  if (/^(?:run|bash|shell|command)$/.test(tool)) return "Running a bounded repository command.";
-  return `${tool.replaceAll("_", " ")} completed.`;
-}
-
-/** Converts provider-specific JSONL into the small, human-readable activity vocabulary Aperta owns. */
-export function normalizeExternalRuntimeEvent(event: Record<string, unknown>, workspace: string): ExternalRuntimeAction | null {
-  const type = typeof event.type === "string" ? event.type.toLowerCase() : "event";
-  const subtype = typeof event.subtype === "string" ? event.subtype.toLowerCase() : "";
-  if (type === "result" || type === "system" || subtype === "init") return null;
-
-  const message = event.message && typeof event.message === "object" ? event.message as Record<string, unknown> : undefined;
-  const content = Array.isArray(message?.content) ? message.content : Array.isArray(event.content) ? event.content : [];
-  const claudeTool = content.find((item) => item && typeof item === "object" && (item as Record<string, unknown>).type === "tool_use") as Record<string, unknown> | undefined;
-  const source = claudeTool ?? event;
-  const input = source.input && typeof source.input === "object" ? source.input as Record<string, unknown>
-    : event.args && typeof event.args === "object" ? event.args as Record<string, unknown>
-    : event.arguments && typeof event.arguments === "object" ? event.arguments as Record<string, unknown>
-    : {};
-  const serialized = JSON.stringify(event);
-  const name = [source.name, event.tool_name, event.toolName]
-    .find((value) => typeof value === "string") as string | undefined;
-  const fallbackTool = serialized.match(/"([A-Za-z]+)ToolCall"/)?.[1];
-  const tool = (name ?? fallbackTool ?? (type.includes("tool") ? "tool" : "")).toLowerCase();
-  if (!tool || tool === "assistant") return null;
-
-  const rawPath = [input.file_path, input.path, input.filePath, event.file_path, event.path, event.filePath]
-    .find((value) => typeof value === "string");
-  const path = externalWorkspacePath(rawPath, workspace);
-  const failed = event.is_error === true || [event.status, subtype].some((value) => value === "failed" || value === "error");
-  return { action: tool, detail: externalToolDetail(tool, path, input), path, status: failed ? "error" : "success" };
-}
-
-function cursorResultText(event: Record<string, unknown>): string {
-  const candidates: string[] = [];
-  const visit = (value: unknown, key = "") => {
-    if (typeof value === "string" && /^(?:result|text|content|message|summary)$/.test(key) && value.trim()) candidates.push(value.trim());
-    else if (Array.isArray(value)) value.forEach((item) => visit(item, key));
-    else if (value && typeof value === "object") for (const [childKey, child] of Object.entries(value)) visit(child, childKey);
-  };
-  visit(event);
-  return candidates.sort((a, b) => b.length - a.length)[0]?.slice(0, 2_000) ?? "";
-}
-
-export function externalRuntimeArgs(runtime: AgentRuntimeConfig, workspace: string, prompt: string, skill?: AgentSkillContract): string[] {
-  const claudeTools = skill && !skill.allowedTools.includes("repository.write") ? "Read,Glob,Grep" : "Read,Edit,Write,Glob,Grep";
-  const args = runtime.kind === "cursor"
-    ? ["-p", prompt, "--force", "--output-format", "stream-json"]
-    : runtime.kind === "claude"
-      ? ["-p", prompt, "--output-format", "stream-json", "--verbose", "--max-turns", "48", "--permission-mode", "acceptEdits", "--tools", claudeTools, "--disable-slash-commands", "--no-session-persistence"]
-      : ["run", "--format", "json", "--pure", "--auto", "--dir", workspace, prompt];
-  if (runtime.model) args.push(runtime.kind === "opencode" ? "--model" : "--model", runtime.model);
-  return args;
-}
-
-export function externalRuntimeFailureDiagnostic(stderr: string, summary: string, stdout: string): string {
-  const diagnostic = cleanExecutionOutput(stderr.trim() || summary.trim() || stdout.trim()).slice(-4_000);
-  return diagnostic || "no diagnostic output";
-}
-
-async function executeExternalTurn(root: string, workspace: string, run: AgentRun, runtime: AgentRuntimeConfig, prompt: string, signal?: AbortSignal): Promise<string> {
-  const args = externalRuntimeArgs(runtime, workspace, prompt, run.skill);
+async function executeExternalTurn(root: string, workspace: string, run: AgentRun, runtime: AgentRuntimeConfig, prompt: string, signal?: AbortSignal, runtimeEngine: ApertaCodingRuntime = agentVRuntime): Promise<string> {
   const started = Date.now();
-  const externalEnvironment = safeEnvironment();
-  if (process.env.CURSOR_API_KEY) externalEnvironment.CURSOR_API_KEY = process.env.CURSOR_API_KEY;
-  if (runtime.kind === "claude" && process.env.ANTHROPIC_API_KEY) externalEnvironment.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-  if (runtime.kind === "claude" && process.env.CLAUDE_CODE_OAUTH_TOKEN) externalEnvironment.CLAUDE_CODE_OAUTH_TOKEN = process.env.CLAUDE_CODE_OAUTH_TOKEN;
-  if (runtime.kind === "opencode") externalEnvironment.OPENCODE_CONFIG_CONTENT = JSON.stringify({ permission: { "*": "deny", read: "allow", edit: run.skill.allowedTools.includes("repository.write") ? "allow" : "deny", glob: "allow", grep: "allow", list: "allow", lsp: "allow", bash: "deny", webfetch: "deny", task: "deny", skill: "deny", external_directory: "deny" } });
-  const child = spawn(runtime.command, args, { cwd: workspace, stdio: ["ignore", "pipe", "pipe"], env: externalEnvironment });
-  let stderr = "", stdout = "", summary = "", timedOut = false;
-  child.stderr?.on("data", (chunk) => { stderr = `${stderr}${String(chunk)}`.slice(-24_000); });
-  const abort = () => child.kill("SIGTERM"); signal?.addEventListener("abort", abort, { once: true });
-  const timeout = setTimeout(() => { timedOut = true; child.kill("SIGTERM"); }, 15 * 60_000);
-  const exit = new Promise<number | null>((resolve, reject) => {
-    child.once("error", reject);
-    child.once("close", (code) => resolve(code));
-  });
   try {
-    if (!child.stdout) throw new Error("Cursor CLI did not expose an output stream");
-    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
-    for await (const line of lines) {
-      if (!line.trim()) continue;
-      stdout = `${stdout}${line}\n`.slice(-24_000);
-      let event: Record<string, unknown>;
-      try { event = JSON.parse(line) as Record<string, unknown>; }
-      catch { continue; }
-      const result = cursorResultText(event); if (result) summary = result;
-      const record = normalizeExternalRuntimeEvent(event, workspace);
-      if (record && run.actions.length < 400) {
-        run.actions.push({ index: run.actions.length + 1, ...record, ts: new Date().toISOString() });
-        run.telemetry.toolCalls++;
-        await persist(root, run);
-      }
+    if (runtime.kind === "aperta") throw new Error("Aperta Native does not use the local CLI adapter");
+    const result = await runtimeEngine.run({
+      kind: runtime.kind,
+      model: runtime.model || undefined,
+      workspace,
+      workspaceAccess: run.skill.allowedTools.includes("repository.write") ? "workspace-write" : "read-only",
+      projectId: run.repo,
+      runId: run.id,
+      prompt,
+      abortSignal: signal,
+      events: {
+        async emit(event) {
+          if (event.type === "run.started") run.provenance = event.provenance;
+          const action = eventAction(event);
+          if (action && run.actions.length < 400) {
+            run.actions.push({ index: run.actions.length + 1, ...action, ts: new Date().toISOString() });
+            await persist(root, run);
+          }
+        },
+      },
+    });
+    run.provenance = result.provenance;
+    run.telemetry.providerCalls++;
+    run.telemetry.providerLatencyMs += result.durationMs;
+    run.telemetry.toolCalls += result.activityCount;
+    run.actions.push({ index: run.actions.length + 1, action: "runtime", detail: `${result.activityCount} transport event${result.activityCount === 1 ? "" : "s"} · ${result.attempts} attempt${result.attempts === 1 ? "" : "s"}.`, status: "success", durationMs: result.durationMs, ts: new Date().toISOString() });
+    await persist(root, run);
+    return result.summary;
+  } catch (error) {
+    if (!run.telemetry.providerCalls) {
+      run.telemetry.providerCalls++;
+      run.telemetry.providerLatencyMs += Date.now() - started;
     }
-    const code = await exit;
-    run.telemetry.providerCalls++; run.telemetry.providerLatencyMs += Date.now() - started;
-    if (signal?.aborted) throw new DOMException("Canceled", "AbortError");
-    const label = runtime.kind === "cursor" ? "Cursor" : runtime.kind === "claude" ? "Claude Code" : "OpenCode";
-    if (timedOut) throw new Error(`${label} exceeded Aperta's 15-minute turn limit`);
-    if (code !== 0) throw new Error(`${label} exited with code ${code}: ${externalRuntimeFailureDiagnostic(stderr, summary, stdout)}`);
-    return summary;
-  } finally {
-    clearTimeout(timeout); signal?.removeEventListener("abort", abort);
+    throw error;
   }
 }
 
-export async function runExternalAgent(root: string, intent: string, runtime: AgentRuntimeConfig, signal?: AbortSignal, context: { conversationId?: string; previousRuns?: AgentRun[] } = {}): Promise<AgentRun> {
+export async function runExternalAgent(root: string, intent: string, runtime: AgentRuntimeConfig, signal?: AbortSignal, context: { conversationId?: string; previousRuns?: AgentRun[]; runtimeEngine?: ApertaCodingRuntime } = {}): Promise<AgentRun> {
   if (runtime.kind === "aperta") throw new Error("Aperta native runs require a model profile");
   const cleanIntent = intent.trim(); if (cleanIntent.length < 10 || cleanIntent.length > 4_000) throw new Error("Describe the change in 10 to 4,000 characters");
   const previousRuns = context.previousRuns ?? [];
-  const runtimeLabel = runtime.kind === "cursor" ? "Cursor" : runtime.kind === "claude" ? "Claude Code" : "OpenCode";
+  const runtimeLabel = runtime.kind === "codex" ? "Codex CLI" : runtime.kind === "cursor" ? "Cursor" : runtime.kind === "claude" ? "Claude Code" : "OpenCode";
   const selectedSkill = selectAgentSkill(cleanIntent);
   const run: AgentRun = { id: randomUUID(), conversationId: conversationId(context.conversationId), turnIndex: previousRuns.length + 1, repo: root.split("/").at(-1) ?? "repository", intent: cleanIntent, status: "running", provider: runtime.kind, model: runtime.model || `${runtimeLabel} default`, createdAt: new Date().toISOString(), files: [], patch: "", actions: [], capabilities: [], skill: selectedSkill, verification: { status: "unavailable", plan: [], attempts: [] }, contract: defaultExecutionContract(cleanIntent, [], selectedSkill), promotion: { status: "review-required", allowed: false, requiresHumanReview: true, reason: "The run has not produced reviewable evidence yet." }, telemetry: { providerCalls: 0, providerLatencyMs: 0, toolCalls: 0, toolLatencyMs: 0, errors: [] }, context: { maxInputChars: MAX_AGENT_INPUT_CHARS, estimatedMaxInputTokens: Math.ceil(MAX_AGENT_INPUT_CHARS / 4), lastInputChars: 0, estimatedLastInputTokens: 0, maxOutputTokens: AGENT_OUTPUT_TOKENS, retryMaxOutputTokens: AGENT_RETRY_OUTPUT_TOKENS } };
   await persist(root, run);
@@ -897,7 +821,7 @@ export async function runExternalAgent(root: string, intent: string, runtime: Ag
     if (routedCapabilities.length) prompt += `\n\nAperta already executed the requested bounded capabilities below. Lead with observed evidence, distinguish observation from repository configuration, and do not claim that shell access is unavailable or ask the user to repeat these commands manually. Complete check logs remain local unless the user explicitly permits sharing.\n\n${JSON.stringify(routedCapabilities)}`;
     else if (requestsProjectVerification(cleanIntent) && !verificationCommands.length) prompt += "\n\nAperta could not detect a supported project verification command in this repository. Explain that harness-level limitation clearly; do not claim that your runtime's lack of Bash is the reason.";
     run.context.lastInputChars = prompt.length; run.context.estimatedLastInputTokens = Math.ceil(prompt.length / 4);
-    let summary = await executeExternalTurn(root, workspace, run, runtime, prompt, signal) || `${runtimeLabel} completed the requested turn.`;
+    let summary = await executeExternalTurn(root, workspace, run, runtime, prompt, signal, context.runtimeEngine) || `${runtimeLabel} completed the requested turn.`;
     const initialCandidate = await createRepositorySnapshot(workspace), initialDiff = await diffSnapshots(workspace, turnStart, initialCandidate);
     if (initialDiff.files.length && !run.skill.allowedTools.includes("repository.write")) throw new Error(`${run.skill.label} is read-only, but ${runtimeLabel} attempted to modify ${initialDiff.files.length} repository file${initialDiff.files.length === 1 ? "" : "s"}. Aperta discarded the isolated changes.`);
     if (initialDiff.files.length && verificationCommands.length) await establishExternalBaseline(root, run, verificationCommands, previousRuns, signal);
@@ -910,7 +834,7 @@ export async function runExternalAgent(root: string, intent: string, runtime: Ag
       if (attempt.status === "passed" || attemptIndex === MAX_VERIFY_ATTEMPTS) break;
       prompt = `Aperta's independent verification failed after your previous changes. Read the exact command output below, repair the implementation without weakening legitimate checks, and leave the corrected files in this workspace.\n\n${JSON.stringify(verificationFeedback(attempt))}`;
       run.status = "running"; run.context.lastInputChars = prompt.length; run.context.estimatedLastInputTokens = Math.ceil(prompt.length / 4); await persist(root, run);
-      summary = await executeExternalTurn(root, workspace, run, runtime, prompt, signal) || summary;
+      summary = await executeExternalTurn(root, workspace, run, runtime, prompt, signal, context.runtimeEngine) || summary;
     }
     const after = await createRepositorySnapshot(workspace), diff = await diffSnapshots(workspace, before, after);
     run.resultTree = after.tree; run.patch = diff.patch; run.files = diff.files; run.summary = summary;

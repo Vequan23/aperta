@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { requestProviderAction, requestProviderJson, type CoachConfig, type CoachProvider } from "./coach.ts";
+import { agentVRuntime, type ApertaCodingRuntime, type ExternalAgentRuntimeKind } from "./agent-runtime.ts";
 
 const execFileAsync = promisify(execFile);
 const providers = new Set<CoachProvider>(["openai", "anthropic", "google", "deepseek", "ollama", "openrouter", "groq", "openai-compatible"]);
@@ -14,9 +15,20 @@ const defaultBaseUrls: Record<CoachProvider, string> = {
 };
 
 export type ModelRole = "builder" | "coach" | "verifier";
-export type AgentRuntimeKind = "aperta" | "cursor" | "claude" | "opencode";
+export type AgentRuntimeKind = "aperta" | ExternalAgentRuntimeKind;
 export interface AgentRuntimeConfig { kind: AgentRuntimeKind; model: string; command: string }
-export interface AgentRuntimeStatus extends AgentRuntimeConfig { available: boolean; version?: string; detail: string }
+export interface AgentRuntimeStatus extends AgentRuntimeConfig {
+  available: boolean;
+  ready: boolean;
+  supported: boolean;
+  verification: "unverified" | "ready" | "failed" | "not-applicable";
+  version?: string;
+  checkedAt?: string;
+  detail: string;
+  failureCode?: string;
+  adapterStrategy: string;
+  capabilities: string[];
+}
 export interface ModelCapabilities { status: "untested" | "connected" | "degraded"; nativeTools: boolean; modelDiscovery: boolean; testedAt?: string; latencyMs?: number; detail?: string }
 export interface ProviderModel { id: string; name: string; nativeTools?: boolean; contextWindow?: number }
 export const providerCatalog = [
@@ -43,8 +55,9 @@ export interface ModelProfile {
 
 interface GlobalSettings { version: 2; activeProfileIds: Partial<Record<ModelRole, string>>; profiles: ModelProfile[]; agentRuntime: AgentRuntimeConfig }
 
-const defaultAgentRuntime: AgentRuntimeConfig = { kind: "aperta", model: "", command: "cursor-agent" };
-const runtimeCommands: Record<AgentRuntimeKind, string> = { aperta: "", cursor: "cursor-agent", claude: "claude", opencode: "opencode" };
+const defaultAgentRuntime: AgentRuntimeConfig = { kind: "aperta", model: "", command: "" };
+const runtimeCommands: Record<AgentRuntimeKind, string> = { aperta: "", codex: "codex", cursor: "cursor-agent", claude: "claude", opencode: "opencode" };
+const externalRuntimeKinds: ExternalAgentRuntimeKind[] = ["codex", "opencode", "claude", "cursor"];
 
 function settingsDir(): string { return process.env.APERTA_HOME ? resolve(process.env.APERTA_HOME) : join(homedir(), ".aperta"); }
 function settingsFile(): string { return join(settingsDir(), "settings.json"); }
@@ -64,9 +77,9 @@ async function readRaw(): Promise<GlobalSettings> {
     const legacy = typeof value.activeCoachProfileId === "string" ? value.activeCoachProfileId : undefined;
     const rawRuntime = value.agentRuntime && typeof value.agentRuntime === "object" ? value.agentRuntime : {};
     const agentRuntime: AgentRuntimeConfig = {
-      kind: ["cursor", "claude", "opencode"].includes(rawRuntime.kind) ? rawRuntime.kind : "aperta",
+      kind: externalRuntimeKinds.includes(rawRuntime.kind) ? rawRuntime.kind : "aperta",
       model: typeof rawRuntime.model === "string" ? rawRuntime.model.trim().slice(0, 160) : "",
-      command: runtimeCommands[["cursor", "claude", "opencode"].includes(rawRuntime.kind) ? rawRuntime.kind as AgentRuntimeKind : "aperta"],
+      command: runtimeCommands[externalRuntimeKinds.includes(rawRuntime.kind) ? rawRuntime.kind as AgentRuntimeKind : "aperta"],
     };
     return { version: 2, activeProfileIds: value.activeProfileIds && typeof value.activeProfileIds === "object" ? value.activeProfileIds : legacy ? { builder: legacy, coach: legacy, verifier: legacy } : {}, profiles: Array.isArray(value.profiles) ? value.profiles : [], agentRuntime };
   } catch (error) {
@@ -112,44 +125,36 @@ function environmentKey(provider: CoachProvider): string | undefined {
 export async function publicModelSettings() {
   const settings = await readRaw();
   const profiles = await Promise.all(settings.profiles.map(async (profile) => ({ ...profile, credentialConfigured: profile.provider === "ollama" || Boolean(environmentKey(profile.provider)) || Boolean(await keychainRead(profile.id)) })));
-  const [agentRuntime, apertaRuntime, cursorRuntime, claudeRuntime, opencodeRuntime] = await Promise.all([
+  const [agentRuntime, apertaRuntime, codexRuntime, opencodeRuntime, claudeRuntime, cursorRuntime] = await Promise.all([
     inspectAgentRuntime(settings.agentRuntime),
     inspectAgentRuntime({ kind: "aperta", model: "", command: "" }),
-    inspectAgentRuntime({ kind: "cursor", model: settings.agentRuntime.kind === "cursor" ? settings.agentRuntime.model : "", command: "cursor-agent" }),
-    inspectAgentRuntime({ kind: "claude", model: settings.agentRuntime.kind === "claude" ? settings.agentRuntime.model : "", command: "claude" }),
+    inspectAgentRuntime({ kind: "codex", model: settings.agentRuntime.kind === "codex" ? settings.agentRuntime.model : "", command: "codex" }),
     inspectAgentRuntime({ kind: "opencode", model: settings.agentRuntime.kind === "opencode" ? settings.agentRuntime.model : "", command: "opencode" }),
+    inspectAgentRuntime({ kind: "claude", model: settings.agentRuntime.kind === "claude" ? settings.agentRuntime.model : "", command: "claude" }),
+    inspectAgentRuntime({ kind: "cursor", model: settings.agentRuntime.kind === "cursor" ? settings.agentRuntime.model : "", command: "cursor-agent" }),
   ]);
-  return { activeCoachProfileId: settings.activeProfileIds.coach ?? null, activeProfileIds: settings.activeProfileIds, profiles, providers: providerCatalog, agentRuntime, agentRuntimes: [apertaRuntime, cursorRuntime, claudeRuntime, opencodeRuntime], secureStorage: process.platform === "darwin" ? "macOS Keychain" : "environment only" };
+  return { activeCoachProfileId: settings.activeProfileIds.coach ?? null, activeProfileIds: settings.activeProfileIds, profiles, providers: providerCatalog, agentRuntime, agentRuntimes: [apertaRuntime, codexRuntime, opencodeRuntime, claudeRuntime, cursorRuntime], secureStorage: process.platform === "darwin" ? "macOS Keychain" : "environment only" };
 }
 
-export async function inspectAgentRuntime(config?: AgentRuntimeConfig): Promise<AgentRuntimeStatus> {
+export async function inspectAgentRuntime(config?: AgentRuntimeConfig, runtimeEngine: ApertaCodingRuntime = agentVRuntime): Promise<AgentRuntimeStatus> {
   const runtime = config ?? (await readRaw()).agentRuntime;
-  if (runtime.kind === "aperta") return { ...runtime, available: true, detail: "Aperta's bounded native tool loop is available." };
-  try {
-    const { stdout, stderr } = await execFileAsync(runtime.command, ["--version"], { timeout: 5_000, maxBuffer: 64 * 1024 });
-    const version = `${stdout}${stderr}`.trim().split("\n")[0]?.slice(0, 160) || "installed";
-    const label = runtime.kind === "cursor" ? "Cursor" : runtime.kind === "claude" ? "Claude Code" : "OpenCode";
-    if (runtime.kind === "claude" && !process.env.ANTHROPIC_API_KEY && !process.env.CLAUDE_CODE_OAUTH_TOKEN) {
-      try {
-        const auth = await execFileAsync(runtime.command, ["auth", "status"], { timeout: 5_000, maxBuffer: 64 * 1024 });
-        const status = JSON.parse(auth.stdout);
-        if (status?.loggedIn !== true) return { ...runtime, available: false, version, detail: "Claude Code is installed but is not authenticated. Run claude auth login first." };
-      } catch { return { ...runtime, available: false, version, detail: "Claude Code is installed, but Aperta could not verify its authentication. Run claude auth status." }; }
-    }
-    return { ...runtime, available: true, version, detail: `${label} CLI is installed. Authentication remains managed by ${label}.` };
-  } catch (error) {
-    const missing = (error as NodeJS.ErrnoException).code === "ENOENT";
-    const label = runtime.kind === "cursor" ? "Cursor" : runtime.kind === "claude" ? "Claude Code" : "OpenCode";
-    return { ...runtime, available: false, detail: missing ? `${label} CLI is not installed or is not on PATH.` : `${label} CLI could not be started: ${error instanceof Error ? error.message : String(error)}` };
-  }
+  if (runtime.kind === "aperta") return { ...runtime, available: true, ready: true, supported: true, verification: "ready", detail: "Aperta's bounded native tool loop is available.", adapterStrategy: "aperta-native-v1", capabilities: ["structured-output", "local-workspace", "read-only-workspace", "workspace-write"] };
+  const shared = await runtimeEngine.inspect(runtime.kind);
+  return { ...runtime, available: shared.availability === "installed", ready: shared.verification === "ready", supported: shared.executionSupported, verification: shared.verification, version: shared.version, checkedAt: shared.checkedAt, detail: shared.detail, failureCode: shared.failureCode, adapterStrategy: shared.adapterStrategy, capabilities: shared.capabilities };
 }
 
-export async function saveAgentRuntime(input: Partial<AgentRuntimeConfig>): Promise<AgentRuntimeStatus> {
-  if (!input.kind || !["aperta", "cursor", "claude", "opencode"].includes(input.kind)) throw new Error("Choose a supported agent runtime");
+export async function saveAgentRuntime(input: Partial<AgentRuntimeConfig>, runtimeEngine: ApertaCodingRuntime = agentVRuntime): Promise<AgentRuntimeStatus> {
+  if (!input.kind || !["aperta", ...externalRuntimeKinds].includes(input.kind)) throw new Error("Choose a supported agent runtime");
   const settings = await readRaw();
   const runtime: AgentRuntimeConfig = { kind: input.kind, model: typeof input.model === "string" ? input.model.trim().slice(0, 160) : "", command: runtimeCommands[input.kind] };
-  const status = await inspectAgentRuntime(runtime);
-  if (runtime.kind !== "aperta" && !status.available) throw new Error(`${status.detail} Install and authenticate the runtime before activating it.`);
+  let status = await inspectAgentRuntime(runtime, runtimeEngine);
+  if (runtime.kind !== "aperta") {
+    if (!status.available) throw new Error(status.detail);
+    if (!status.supported) throw new Error(status.detail);
+    const probed = await runtimeEngine.probe(runtime.kind, runtime.model || undefined);
+    status = { ...runtime, available: probed.availability === "installed", ready: probed.verification === "ready", supported: probed.executionSupported, verification: probed.verification, version: probed.version, checkedAt: probed.checkedAt, detail: probed.detail, failureCode: probed.failureCode, adapterStrategy: probed.adapterStrategy, capabilities: probed.capabilities };
+    if (!status.ready) throw new Error(status.detail);
+  }
   settings.agentRuntime = runtime; await writeRaw(settings); return status;
 }
 

@@ -5,8 +5,9 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { applyAgentRun, classifyAgentError, runModelAgent } from "../src/agent-harness.ts";
+import { applyAgentRun, classifyAgentError, runExternalAgent, runModelAgent } from "../src/agent-harness.ts";
 import { buildHarnessHealth } from "../src/harness-intelligence.ts";
+import type { ApertaCodingRuntime } from "../src/agent-runtime.ts";
 
 const exec = promisify(execFile);
 
@@ -46,4 +47,30 @@ test("builds private local harness health and approximate code keep rate", async
   assert.equal(report.models[0].model, "health-model");
   assert.ok(report.tools.some((tool) => tool.action === "read" && tool.reliability === 1));
   assert.match(report.privacy, /locally/i);
+});
+
+test("reliability reports retain the runtime version and adapter strategy", async () => {
+  const root = await mkdtemp(join(tmpdir(), "aperta-harness-provenance-"));
+  await exec("git", ["init", "-q"], { cwd: root });
+  await exec("git", ["config", "user.email", "test@aperta.local"], { cwd: root });
+  await exec("git", ["config", "user.name", "Aperta Test"], { cwd: root });
+  await writeFile(join(root, "app.ts"), "export const answer = 42;\n");
+  await exec("git", ["add", "app.ts"], { cwd: root });
+  await exec("git", ["commit", "-qm", "initial"], { cwd: root });
+  const provenance = { engineId: "local-cli", adapterStrategy: "codex-exec-json-v1", runtime: "codex", runtimeVersion: "codex-cli 1.2.3", model: "test-model" };
+  const status = async () => ({ runtimeId: "codex", availability: "installed" as const, verification: "ready" as const, version: provenance.runtimeVersion, detail: "ready", adapterStrategy: provenance.adapterStrategy, capabilities: ["structured-output", "read-only-workspace"], executionSupported: true });
+  const runtimeEngine: ApertaCodingRuntime = {
+    inspect: status,
+    probe: status,
+    async run(input) {
+      await input.events?.emit({ type: "run.started", runId: input.runId, timestamp: new Date().toISOString(), scope: { tenantId: "local", projectId: input.projectId, principalId: "test", roles: ["owner"], permissions: ["workspace:read"], dataClassification: "confidential" }, provenance });
+      return { summary: "The export is 42.", provenance, durationMs: 4, activityCount: 1, attempts: 1 };
+    },
+  };
+  await runExternalAgent(root, "Explain the exported answer without changing files.", { kind: "codex", model: "test-model", command: "codex" }, undefined, { runtimeEngine });
+  const report = await buildHarnessHealth(root);
+  assert.equal(report.models[0]?.runtimeVersion, "codex-cli 1.2.3");
+  assert.equal(report.models[0]?.adapterStrategy, "codex-exec-json-v1");
+  assert.equal(report.recent[0]?.runtime, "codex");
+  assert.equal(report.recent[0]?.runtimeVersion, "codex-cli 1.2.3");
 });
