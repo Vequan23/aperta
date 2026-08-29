@@ -5168,7 +5168,7 @@ onUnmounted(() => {
                 <span>2</span><div><strong>Coach</strong><p>{{ activeCoachProfile?.name ?? 'Not configured' }} · {{ activeCoachProfile?.model ?? 'Choose a model below' }}</p><small>Creates review questions from repository evidence.</small></div>
               </article>
               <article class="deterministic">
-                <span>✓</span><div><strong>Verification</strong><p>Aperta repository checks</p><small>Project commands and runtime probes. A model does not decide the result.</small></div>
+                <span><CircleCheck aria-hidden="true" /></span><div><strong>Verification</strong><p>Aperta repository checks</p><small>Project commands and runtime probes. A model does not decide the result.</small></div>
               </article>
             </section>
             <div class="settings-layout">
@@ -5219,7 +5219,10 @@ onUnmounted(() => {
                       :key="role"
                       :class="{ assigned: modelSettings?.activeProfileIds[role] === profile.id }"
                       @click="assignProfileRole(profile.id, role)"
-                    >{{ modelSettings?.activeProfileIds[role] === profile.id ? `✓ ${role}` : `Use for ${role}` }}</button>
+                    >
+                      <Check v-if="modelSettings?.activeProfileIds[role] === profile.id" aria-hidden="true" />
+                      {{ modelSettings?.activeProfileIds[role] === profile.id ? role : `Use for ${role}` }}
+                    </button>
                     <button
                       class="remove-profile"
                       @click="removeProfile(profile.id)"
@@ -5403,7 +5406,7 @@ onUnmounted(() => {
             Preparing your review…
           </div>
           <div v-else-if="completion" class="completion-panel">
-            <div class="completion-orb">✓</div>
+            <div class="completion-orb"><CircleCheck aria-hidden="true" /></div>
             <p class="eyebrow">DEFENSE RECORDED</p>
             <h2>
               {{

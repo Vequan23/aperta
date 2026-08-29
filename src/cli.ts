@@ -132,7 +132,7 @@ async function doctor(args: string[]): Promise<void> {
   let ledger = await auditLedger(root);
   if (!ledger.valid && args.includes("--repair")) {
     const repaired = await repairLedger(root);
-    console.log(`✓ Recovery: preserved the original at ${repaired.backup} · recovered ${repaired.recovered} events`);
+    console.log(`[ok] Recovery: preserved the original at ${repaired.backup} · recovered ${repaired.recovered} events`);
     ledger = await auditLedger(root);
   }
   checks.push({ label: "Repository", ok: true, detail: root });
@@ -146,7 +146,7 @@ async function doctor(args: string[]): Promise<void> {
   const node = await has(join(root, "package.json"));
   checks.push({ label: "Semantic adapter", ok: java || node, detail: java ? "JDK compiler · dependency resolution becomes complete after a successful project proof" : node ? "TypeScript compiler · JS/TS/JSX/TSX/Vue scripts" : "Universal Git analysis only" });
   const failed = checks.filter((check) => !check.ok);
-  for (const check of checks) console.log(`${check.ok ? "✓" : "!"} ${check.label}: ${check.detail}`);
+  for (const check of checks) console.log(`${check.ok ? "[ok]" : "[!]"} ${check.label}: ${check.detail}`);
   console.log(failed.length ? `\n${failed.length} issue${failed.length === 1 ? "" : "s"} need attention before release use.` : "\nAperta is ready for the ownership loop.");
   if (failed.length) process.exitCode = 1;
 }
