@@ -46,7 +46,7 @@ const runtimes = ["Aperta Native", "Claude Code", "OpenCode", "Cursor"];
           <h1>Own the code<br /><em>AI writes.</em></h1>
           <p class="hero-lede">Aperta captures each code change, runs project checks, connects claims to evidence, and helps you explain the result before it reaches your main branch.</p>
           <div class="hero-actions">
-            <a class="aqua-button primary" href="https://www.npmjs.com/package/aperta-cli" target="_blank" rel="noreferrer"><GitFork /> Install Aperta</a>
+            <a class="aqua-button primary" href="https://www.npmjs.com/package/@vraxis/aperta" target="_blank" rel="noreferrer"><GitFork /> Install Aperta</a>
             <a class="aqua-button secondary" href="#product">See the workflow <ArrowRight /></a>
           </div>
           <div class="trust-row"><osx-badge tone="success" label="Open source" dot /><osx-badge tone="info" label="Runs locally" dot /><osx-badge tone="success" label="Use your model" dot /></div>
@@ -163,7 +163,7 @@ const runtimes = ["Aperta Native", "Claude Code", "OpenCode", "Cursor"];
         ></osx-ecosystem-card>
       </section>
 
-      <section class="final-cta section-wrap"><div><p class="eyebrow"><CircleDot /> Open source · beta</p><h2>Own your next AI-written change.</h2><p>Capture the patch, run the checks, and explain what you plan to maintain.</p></div><a class="aqua-button primary large" href="https://www.npmjs.com/package/aperta-cli" target="_blank" rel="noreferrer"><GitFork /> Install Aperta <ArrowRight /></a></section>
+      <section class="final-cta section-wrap"><div><p class="eyebrow"><CircleDot /> Open source · beta</p><h2>Own your next AI-written change.</h2><p>Capture the patch, run the checks, and explain what you plan to maintain.</p></div><a class="aqua-button primary large" href="https://www.npmjs.com/package/@vraxis/aperta" target="_blank" rel="noreferrer"><GitFork /> Install Aperta <ArrowRight /></a></section>
     </main>
 
     <footer><a class="brand" href="#top"><span class="brand-mark">a</span><span>aperta</span></a><p>Evidence and understanding for AI-written code.</p><div><a href="https://github.com/Vequan23/aperta" target="_blank" rel="noreferrer">GitHub</a><a href="https://github.com/Vequan23/aperta/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT License</a></div></footer>

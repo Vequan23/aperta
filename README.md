@@ -9,13 +9,13 @@
 
 <p align="center">
   <a href="https://aperta-six.vercel.app/">Website</a> ·
-  <a href="https://www.npmjs.com/package/aperta-cli">npm</a> ·
+  <a href="https://www.npmjs.com/package/@vraxis/aperta">npm</a> ·
   <a href="https://github.com/Vequan23/aperta/issues">Issues</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/aperta-cli"><img alt="npm beta" src="https://img.shields.io/npm/v/aperta-cli/beta?label=npm%20beta&color=1686cc"></a>
+  <a href="https://www.npmjs.com/package/@vraxis/aperta"><img alt="npm beta" src="https://img.shields.io/npm/v/@vraxis/aperta/beta?label=npm%20beta&color=1686cc"></a>
   <a href="https://github.com/Vequan23/aperta/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Vequan23/aperta/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <img alt="Node 24 LTS recommended" src="https://img.shields.io/badge/node-24%20LTS%20recommended-3c873a">
@@ -53,12 +53,14 @@ Requires Git and a supported Node.js LTS release. **Node 24 LTS is recommended**
 Node 22.12 or newer remains supported through its maintenance window.
 
 ```sh
-npm install --global aperta-cli@beta
+npm install --global @vraxis/aperta@beta
 
 cd /path/to/your/repository
 aperta init
 aperta dashboard
 ```
+
+Already using the earlier `aperta-cli` beta? The command remains `aperta`; replace the package with `@vraxis/aperta` to receive future releases.
 
 `aperta init` starts the local observer. The dashboard opens a repository
 workspace containing Agent Work, Git Changes, Changes to Review, the Proof
