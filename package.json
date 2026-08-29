@@ -1,6 +1,6 @@
 {
   "name": "@vraxis/aperta",
-  "version": "1.0.0-beta.3",
+  "version": "1.0.0-beta.4",
   "description": "See which parts of your codebase you can actually explain.",
   "type": "module",
   "bin": {
