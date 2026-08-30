@@ -309,7 +309,7 @@ aperta stop       # stop the observer
 
 For dashboard development, run `npm run dev`. The standalone Vue marketing site
 lives in `marketing/` and uses the published
-[OSX Components](https://github.com/Vequan23/osx-components) package:
+[osx Components](https://github.com/Vequan23/osx-components) package:
 
 ```sh
 npm run dev:marketing
